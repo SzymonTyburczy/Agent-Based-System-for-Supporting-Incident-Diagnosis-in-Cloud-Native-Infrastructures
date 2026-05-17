@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IncidentIQ — Agent-Based Incident Diagnosis</title>
+  <meta name="description" content="Agent-based system for supporting incident diagnosis in cloud-native Kubernetes infrastructures using RAG and Gemini AI." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header class="header">
+  <div class="header-brand">
+    <div class="header-logo">⚡</div>
+    <div>
+      <div class="header-title">IncidentIQ</div>
+      <div class="header-subtitle">Agent-Based Incident Diagnosis System</div>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot" id="system-status-dot"></div>
+    <span id="system-status-text">System Online</span>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ── Sidebar: Scenario Selector ── -->
+  <aside class="sidebar">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🚨 Incident Scenarios</span>
+        <span class="badge badge-info" id="scenario-count">Loading…</span>
+      </div>
+      <div class="card-body">
+        <p class="section-title">Select a scenario to diagnose</p>
+        <div class="scenario-list" id="scenario-list">
+          <!-- populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🤖 About the System</span>
+      </div>
+      <div class="card-body" style="font-size:12px; color:var(--text-secondary); line-height:1.7;">
+        <p style="margin-bottom:10px;">This prototype demonstrates an <strong style="color:var(--text-primary)">agent-based pipeline</strong> for cloud-native incident diagnosis.</p>
+        <p>On each run, the agent:</p>
+        <ol style="margin:8px 0 0 18px;">
+          <li>Receives the alert</li>
+          <li>Fetches metrics from Prometheus</li>
+          <li>Queries logs from Elasticsearch</li>
+          <li>Retrieves docs via <strong style="color:var(--accent-hover)">RAG</strong></li>
+          <li>Generates a report with <strong style="color:var(--accent-hover)">Gemini AI</strong></li>
+        </ol>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main: Welcome / Pipeline / Report ── -->
+  <div class="main">
+
+    <!-- Welcome -->
+    <div class="welcome-state" id="welcome-state">
+      <div class="welcome-icon">🔭</div>
+      <div class="welcome-title">Select an Incident Scenario</div>
+      <div class="welcome-subtitle">Choose one of the predefined incident scenarios from the left panel to start the agent-based diagnosis pipeline.</div>
+    </div>
+
+    <!-- Pipeline steps -->
+    <div class="card pipeline-panel" id="pipeline-panel">
+      <div class="pipeline-header card-header">
+        <div class="pipeline-alert-info">
+          <span id="pipeline-alert-icon">🔴</span>
+          <div>
+            <div class="pipeline-alert-name" id="pipeline-alert-name">—</div>
+            <div style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono)" id="pipeline-alert-type">—</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="run-btn" onclick="runDiagnosis()">
+          <span>▶</span> Run Diagnosis
+        </button>
+      </div>
+
+      <div class="pipeline-steps" id="pipeline-steps">
+        <div class="step-item" id="step-ALERT_RECEIVED">
+          <div class="step-line"></div>
+          <div class="step-icon-wrap">📨</div>
+          <div class="step-content">
+            <div class="step-name">ALERT_RECEIVED</div>
+            <div class="step-message" id="msg-ALERT_RECEIVED">Waiting…</div>
+          </div>
+        </div>
+        <div class="step-item" id="step-ANALYZING_METRICS">
+          <div class="step-line"></div>
+          <div class="step-icon-wrap">📊</div>
+          <div class="step-content">
+            <div class="step-name">ANALYZING_METRICS</div>
+            <div class="step-message" id="msg-ANALYZING_METRICS">Waiting…</div>
+          </div>
+        </div>
+        <div class="step-item" id="step-QUERYING_LOGS">
+          <div class="step-line"></div>
+          <div class="step-icon-wrap">🗂️</div>
+          <div class="step-content">
+            <div class="step-name">QUERYING_LOGS</div>
+            <div class="step-message" id="msg-QUERYING_LOGS">Waiting…</div>
+          </div>
+        </div>
+        <div class="step-item" id="step-RAG_SEARCH">
+          <div class="step-line"></div>
+          <div class="step-icon-wrap">🔍</div>
+          <div class="step-content">
+            <div class="step-name">RAG_SEARCH</div>
+            <div class="step-message" id="msg-RAG_SEARCH">Waiting…</div>
+            <div class="rag-doc-list" id="rag-doc-list" style="margin-top:8px;"></div>
+          </div>
+        </div>
+        <div class="step-item" id="step-GENERATING_REPORT">
+          <div class="step-icon-wrap">✨</div>
+          <div class="step-content">
+            <div class="step-name">GENERATING_REPORT</div>
+            <div class="step-message" id="msg-GENERATING_REPORT">Waiting…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Telemetry panels (metrics + logs) -->
+    <div class="telemetry-grid" id="telemetry-grid" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📈 Metrics</span>
+        </div>
+        <div class="card-body">
+          <div class="metrics-grid" id="metrics-grid"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📋 Recent Logs</span>
+        </div>
+        <div class="card-body" style="padding:12px;">
+          <div class="log-list" id="log-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Report -->
+    <div class="card report-panel" id="report-panel">
+      <div class="card-header">
+        <span class="card-title">📄 Diagnostic Report</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-size:11px;color:var(--text-muted);">Generated by Gemini AI</span>
+          <button class="btn btn-secondary" onclick="copyReport()" id="copy-btn" style="padding:6px 12px;font-size:11px;">📋 Copy</button>
+        </div>
+      </div>
+      <div class="report-body" id="report-body"></div>
+    </div>
+
+    <!-- Error banner -->
+    <div class="error-banner" id="error-banner"></div>
+
+  </div>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
