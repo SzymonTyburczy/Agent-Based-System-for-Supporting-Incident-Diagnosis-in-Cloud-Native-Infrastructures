@@ -12,19 +12,34 @@ def _ensure_client():
     if not _client_initialized:
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set. Copy .env.example to .env and add your key.")
+            raise ValueError(
+                "GEMINI_API_KEY environment variable is not set. "
+                "Copy .env.example to .env and add your key."
+            )
         genai.configure(api_key=api_key)
         _client_initialized = True
 
 
-def build_diagnosis_prompt(scenario: dict) -> str:
-    """Build a detailed prompt for Gemini from the collected telemetry and RAG data."""
+def build_diagnosis_prompt(scenario: dict, rag_docs: list[dict]) -> str:
+    """
+    Build a detailed prompt for Gemini from the collected telemetry and
+    real RAG-retrieved documentation chunks.
+
+    Args:
+        scenario: The incident scenario dict with metrics and logs.
+        rag_docs: List of dicts with 'source', 'content', 'distance'
+                  retrieved from ChromaDB vector search.
+    """
     metrics_str = "\n".join(f"  - {k}: {v}" for k, v in scenario["metrics"].items())
     logs_str = "\n".join(f"  {log}" for log in scenario["logs"])
-    rag_str = "\n\n".join(
-        f"  [Source: {doc['source']}]\n  {doc['content']}"
-        for doc in scenario["rag_docs"]
-    )
+
+    if rag_docs:
+        rag_str = "\n\n".join(
+            f"  [Source: {doc['source']} | Relevance score: {1 - doc.get('distance', 0):.2%}]\n  {doc['content']}"
+            for doc in rag_docs
+        )
+    else:
+        rag_str = "  No documentation retrieved."
 
     return f"""You are an expert Site Reliability Engineer (SRE) and cloud-native infrastructure specialist.
 You are analyzing an incident in a Kubernetes-based production environment.
@@ -42,7 +57,9 @@ You are analyzing an incident in a Kubernetes-based production environment.
 ## Recent Log Entries
 {logs_str}
 
-## Retrieved Documentation (RAG)
+## Retrieved Documentation (RAG — ChromaDB semantic search)
+The following documentation chunks were retrieved via vector similarity search based on the alert context:
+
 {rag_str}
 
 ---
@@ -71,11 +88,11 @@ Provide a numbered, prioritized list of concrete remediation steps. For each ste
 Keep the report concise, actionable, and focused on the specific data provided. Use the exact metric values and log timestamps in your analysis."""
 
 
-async def generate_diagnosis_stream(scenario: dict):
+async def generate_diagnosis_stream(scenario: dict, rag_docs: list[dict]):
     """Generate a streaming diagnosis report from Gemini."""
     _ensure_client()
     model = genai.GenerativeModel("gemini-2.0-flash")
-    prompt = build_diagnosis_prompt(scenario)
+    prompt = build_diagnosis_prompt(scenario, rag_docs)
 
     response = model.generate_content(prompt, stream=True)
     for chunk in response:

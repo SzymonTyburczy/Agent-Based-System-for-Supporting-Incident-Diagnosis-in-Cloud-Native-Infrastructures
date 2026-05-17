@@ -239,6 +239,10 @@ function handleAgentEvent(payload) {
     case 'RAG_SEARCH':
       activateStep('RAG_SEARCH');
       if (data?.documents) renderRagDocs(data.documents);
+      if (data?.query) {
+        const qEl = document.getElementById('msg-RAG_SEARCH');
+        if (qEl) qEl.textContent = `Query: "${data.query.substring(0, 80)}…"`;
+      }
       setTimeout(() => completeStep('RAG_SEARCH', message), 600);
       break;
 
@@ -320,7 +324,14 @@ function renderRagDocs(docs) {
     setTimeout(() => {
       const tag = document.createElement('span');
       tag.className = 'rag-doc-tag';
-      tag.textContent = `📄 ${doc}`;
+      // doc can be a string (legacy) or {source, distance} object
+      if (typeof doc === 'object' && doc.source) {
+        const score = doc.distance != null ? ` (${((1 - doc.distance) * 100).toFixed(0)}%)` : '';
+        tag.textContent = `📄 ${doc.source}${score}`;
+        tag.title = `Cosine similarity: ${((1 - doc.distance) * 100).toFixed(1)}%`;
+      } else {
+        tag.textContent = `📄 ${doc}`;
+      }
       list.appendChild(tag);
     }, i * 150);
   });
