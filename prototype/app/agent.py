@@ -15,11 +15,15 @@ from app.gemini import generate_diagnosis_stream
 from app.rag import query_knowledge_base
 
 
-async def run_diagnosis(scenario_id: str) -> AsyncGenerator[str, None]:
+async def run_diagnosis(scenario_id: str, custom_scenario: dict | None = None) -> AsyncGenerator[str, None]:
     """
     Main agent pipeline. Yields SSE-formatted strings.
     """
-    scenario = SCENARIOS.get(scenario_id)
+    if custom_scenario:
+        scenario = custom_scenario
+    else:
+        scenario = SCENARIOS.get(scenario_id)
+        
     if not scenario:
         yield _sse_event("ERROR", f"Unknown scenario: {scenario_id}")
         return

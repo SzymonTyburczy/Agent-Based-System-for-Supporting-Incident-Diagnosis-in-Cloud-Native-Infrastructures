@@ -91,7 +91,7 @@ Keep the report concise, actionable, and focused on the specific data provided. 
 async def generate_diagnosis_stream(scenario: dict, rag_docs: list[dict]):
     """Generate a streaming diagnosis report from Gemini."""
     _ensure_client()
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
     prompt = build_diagnosis_prompt(scenario, rag_docs)
 
     response = model.generate_content(prompt, stream=True)

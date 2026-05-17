@@ -67,6 +67,25 @@ function renderScenarioList(scenarios) {
   });
 }
 
+// ── Custom Scenario UI ────────────────────────────────────────────────────────
+function showCustomScenarioForm() {
+  if (isRunning) return;
+
+  // Deselect predefined
+  document.querySelectorAll('.scenario-item').forEach(el => el.classList.remove('active'));
+  selectedScenario = null;
+
+  // Show custom form, hide welcome and pipeline details
+  document.getElementById('welcome-state').style.display = 'none';
+  document.getElementById('pipeline-panel').classList.remove('visible');
+  document.getElementById('custom-scenario-panel').style.display = 'block';
+
+  // Hide previous results
+  document.getElementById('telemetry-grid').style.display = 'none';
+  document.getElementById('report-panel').classList.remove('visible');
+  hideError();
+}
+
 function selectScenario(scenario) {
   if (isRunning) return;
 
@@ -76,8 +95,9 @@ function selectScenario(scenario) {
 
   selectedScenario = scenario;
 
-  // Show pipeline panel, hide welcome
+  // Show pipeline panel, hide welcome and custom form
   document.getElementById('welcome-state').style.display = 'none';
+  document.getElementById('custom-scenario-panel').style.display = 'none';
   document.getElementById('pipeline-panel').classList.add('visible');
 
   // Update pipeline header
@@ -93,6 +113,7 @@ function selectScenario(scenario) {
   document.getElementById('report-panel').classList.remove('visible');
   hideError();
 }
+
 
 // ── Pipeline UI Helpers ─────────────────────────────────────────────────────
 
@@ -143,9 +164,42 @@ function completeStep(step, message) {
 
 // ── Diagnosis Runner ────────────────────────────────────────────────────────
 
+async function runCustomDiagnosis() {
+  if (isRunning) return;
+
+  const alertType = document.getElementById('custom-alert-type').value || 'CustomAlert';
+  const service = document.getElementById('custom-service').value || 'my-service';
+  const description = document.getElementById('custom-description').value || 'No description provided';
+
+  const customPayload = {
+    name: 'Custom User Incident',
+    alert_type: alertType,
+    severity: 'warning',
+    service: service,
+    namespace: 'default',
+    description: description,
+    metrics: {},
+    logs: [description] // Pass description as logs to be safe
+  };
+
+  // Hide custom form and show pipeline
+  document.getElementById('custom-scenario-panel').style.display = 'none';
+  document.getElementById('pipeline-panel').classList.add('visible');
+  
+  // Setup pipeline header
+  document.getElementById('pipeline-alert-name').textContent = customPayload.name;
+  document.getElementById('pipeline-alert-type').textContent = customPayload.alert_type;
+  document.getElementById('pipeline-alert-icon').textContent = SEVERITY_ICON[customPayload.severity];
+
+  await executeDiagnosis('/api/diagnose/custom', customPayload);
+}
+
 async function runDiagnosis() {
   if (!selectedScenario || isRunning) return;
+  await executeDiagnosis('/api/diagnose', { scenario_id: selectedScenario.id });
+}
 
+async function executeDiagnosis(endpoint, payload) {
   isRunning = true;
   document.getElementById('run-btn').disabled = true;
   document.getElementById('run-btn').innerHTML = '<div class="spinner" style="width:12px;height:12px;"></div> Running…';
@@ -165,10 +219,10 @@ async function runDiagnosis() {
 
   try {
     // Use fetch with ReadableStream for SSE-over-POST
-    const response = await fetch(`${API}/api/diagnose`, {
+    const response = await fetch(`${API}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scenario_id: selectedScenario.id }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -192,8 +246,8 @@ async function runDiagnosis() {
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           try {
-            const payload = JSON.parse(line.slice(6));
-            handleAgentEvent(payload);
+            const evPayload = JSON.parse(line.slice(6));
+            handleAgentEvent(evPayload);
           } catch (_) { /* ignore malformed chunks */ }
         }
       }

@@ -10,6 +10,8 @@ diagnosis, the agent queries the collection with the alert context and
 retrieves the top-k most relevant documentation chunks.
 """
 
+from __future__ import annotations
+
 import os
 import re
 import hashlib
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 DOCS_DIR = Path(__file__).parent.parent / "docs"
 CHROMA_DIR = Path(__file__).parent.parent / ".chromadb"
 COLLECTION_NAME = "incident_knowledge_base"
-EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_MODEL = "models/gemini-embedding-001"
 CHUNK_SIZE = 600       # characters per chunk
 CHUNK_OVERLAP = 100    # overlap between chunks
 TOP_K = 5              # number of documents to retrieve
@@ -154,7 +156,8 @@ def initialize_rag() -> None:
     )
 
     # Check if collection already exists and is up to date
-    existing = [c.name for c in _chroma_client.list_collections()]
+    # ChromaDB v0.6.0+: list_collections() returns strings, not Collection objects
+    existing = list(_chroma_client.list_collections())
     chunks = _load_documents()
 
     if COLLECTION_NAME in existing:

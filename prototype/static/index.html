@@ -40,6 +40,9 @@
         <div class="scenario-list" id="scenario-list">
           <!-- populated by JS -->
         </div>
+        <button class="btn btn-secondary" onclick="showCustomScenarioForm()" style="width: 100%; margin-top: 10px; text-align: left; justify-content: flex-start; padding: 10px 12px; font-weight: 500;">
+          <span style="margin-right: 8px;">📝</span> Custom Incident
+        </button>
       </div>
     </div>
 
@@ -68,7 +71,35 @@
     <div class="welcome-state" id="welcome-state">
       <div class="welcome-icon">🔭</div>
       <div class="welcome-title">Select an Incident Scenario</div>
-      <div class="welcome-subtitle">Choose one of the predefined incident scenarios from the left panel to start the agent-based diagnosis pipeline.</div>
+      <div class="welcome-subtitle">Choose one of the predefined incident scenarios from the left panel or create a custom one to start the agent-based diagnosis pipeline.</div>
+    </div>
+
+    <!-- Custom Scenario Form -->
+    <div class="card pipeline-panel" id="custom-scenario-panel" style="display: none; padding: 20px;">
+      <div class="card-header" style="margin-bottom: 20px; border-bottom: none; padding: 0;">
+        <span class="card-title">📝 Custom Incident Scenario</span>
+      </div>
+      <div class="custom-form">
+        <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+          <div style="flex: 1;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary);">Alert Type</label>
+            <input type="text" id="custom-alert-type" class="custom-input" placeholder="e.g. HighCPUUsage" value="CustomAlert" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-family: var(--font-mono); font-size: 13px;">
+          </div>
+          <div style="flex: 1;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary);">Service Name</label>
+            <input type="text" id="custom-service" class="custom-input" placeholder="e.g. payment-service" value="my-service" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-family: var(--font-mono); font-size: 13px;">
+          </div>
+        </div>
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary);">Incident Description / Logs / Metrics</label>
+          <textarea id="custom-description" class="custom-input" rows="6" placeholder="Describe the issue, paste logs, or specify metrics here..." style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); font-family: var(--font-sans); font-size: 13px; resize: vertical;"></textarea>
+        </div>
+        <div style="text-align: right;">
+          <button class="btn btn-primary" onclick="runCustomDiagnosis()">
+            <span>▶</span> Run Custom Diagnosis
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Pipeline steps -->

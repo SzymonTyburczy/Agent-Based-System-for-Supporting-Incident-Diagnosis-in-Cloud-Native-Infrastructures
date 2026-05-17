@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.models import AlertRequest
+from app.models import AlertRequest, CustomAlertRequest
 from app.agent import run_diagnosis
 from app.mock_data import SCENARIOS
 from app.rag import initialize_rag, get_collection_stats
@@ -74,6 +74,26 @@ async def diagnose(request: AlertRequest):
 
     return StreamingResponse(
         run_diagnosis(request.scenario_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/diagnose/custom")
+async def diagnose_custom(request: CustomAlertRequest):
+    """
+    Start incident diagnosis pipeline with a custom scenario.
+    """
+    scenario_dict = request.model_dump()
+    # Add an ID so the pipeline knows it's a custom one, though we will pass the dict directly
+    scenario_dict["id"] = "custom"
+    
+    # We need to update run_diagnosis in app/agent.py to accept either scenario_id or a dict.
+    return StreamingResponse(
+        run_diagnosis("custom", custom_scenario=scenario_dict),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

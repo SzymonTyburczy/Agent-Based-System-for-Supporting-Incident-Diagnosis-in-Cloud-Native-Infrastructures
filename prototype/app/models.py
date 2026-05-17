@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 from typing import Literal
 
@@ -18,3 +20,14 @@ class DiagnosisStep(BaseModel):
     ]
     message: str
     data: dict | None = None
+
+
+class CustomAlertRequest(BaseModel):
+    name: str = "Custom Alert"
+    alert_type: str = "Custom"
+    severity: str = "warning"
+    service: str = "unknown-service"
+    namespace: str = "default"
+    description: str
+    metrics: dict = {}
+    logs: list[str] = []
