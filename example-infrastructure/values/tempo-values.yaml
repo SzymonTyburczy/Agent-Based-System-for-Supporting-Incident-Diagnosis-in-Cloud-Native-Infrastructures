@@ -1,0 +1,7 @@
+# =========================================================
+# GRAFANA TEMPO VALUES (Distributed Tracing Backend)
+# =========================================================
+
+tempo:
+  retention: 24h
+replicas: 1

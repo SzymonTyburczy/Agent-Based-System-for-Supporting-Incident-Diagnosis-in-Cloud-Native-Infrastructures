@@ -1,0 +1,29 @@
+# =========================================================
+# GRAFANA MCP SERVER VALUES (Read-Only AI Agent Context)
+# =========================================================
+
+# Connect to our internal Grafana cluster service
+grafana:
+  url: "http://prom-stack-grafana.observability.svc.cluster.local:80"
+
+# Enforce read-only mode so AI assistants cannot mutate dashboards or alerts
+disableWrite: true
+
+# Basic auth credentials for local development cluster
+env:
+  GRAFANA_USERNAME: "admin"
+  GRAFANA_PASSWORD: "admin"
+
+# Expose service on port 8000 for SSE transport port forwarding
+service:
+  enabled: true
+  type: ClusterIP
+  port: 8000
+
+# Lightweight resource limits for local Docker Desktop cluster
+resources:
+  limits:
+    memory: 150Mi
+  requests:
+    cpu: 10m
+    memory: 30Mi
