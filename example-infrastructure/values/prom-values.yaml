@@ -1,0 +1,33 @@
+# =========================================================
+# KUBE-PROMETHEUS-STACK VALUES (Grafana + Prometheus)
+# =========================================================
+
+grafana:
+  adminPassword: "admin"
+  # Automatically provision Loki and Tempo as Grafana data sources
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki.observability.svc.cluster.local:3100
+      access: proxy
+    - name: Tempo
+      type: tempo
+      url: http://tempo.observability.svc.cluster.local:3200
+      access: proxy
+      jsonData:
+        tracesToLogs:
+          datasourceUid: 'Loki'
+
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 2d
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+
+# Disable node-exporter on Docker Desktop Windows to avoid root mount permission issues
+nodeExporter:
+  enabled: false

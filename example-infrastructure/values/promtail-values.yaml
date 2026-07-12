@@ -1,0 +1,16 @@
+# =========================================================
+# PROMTAIL VALUES (Cluster-wide Log Collector DaemonSet)
+# =========================================================
+
+# Configure push endpoint to send container logs to Loki
+config:
+  clients:
+    - url: http://loki.observability.svc.cluster.local:3100/loki/api/v1/push
+
+# Lightweight resource limits suitable for local clusters
+resources:
+  limits:
+    memory: 100Mi
+  requests:
+    cpu: 10m
+    memory: 20Mi
