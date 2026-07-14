@@ -1,0 +1,243 @@
+import { useCallback, useMemo, useState } from "react";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { Check, Copy, Send } from "lucide-react";
+import { PageHeader } from "../components/PageHeader";
+import { MarkdownPreview } from "../components/MarkdownPreview";
+import { UploadZone, type UploadStatus } from "../components/UploadZone";
+import {
+  buildPayload,
+  convertToMarkdown,
+  MissingApiKeyError,
+  type ConversionEngine,
+} from "../lib/converter";
+import { getDefaultAuthor } from "../lib/settings";
+import {
+  clearDocDraft,
+  loadDocDraft,
+  useDocDraftPersistence,
+  type DocDraft,
+} from "../hooks/useDocDraft";
+import { useTransientFlag } from "../hooks/useTransientFlag";
+import type { DocumentPayload, SourceFormat } from "../lib/types";
+
+type RightTab = "preview" | "json";
+
+export function DocumentationPage() {
+  const [draft] = useState(() => loadDocDraft());
+  const [status, setStatus] = useState<UploadStatus>(draft?.status ?? "idle");
+  const [fileName, setFileName] = useState(draft?.fileName ?? "");
+  const [sourceFormat, setSourceFormat] = useState<SourceFormat | null>(
+    draft?.sourceFormat ?? null,
+  );
+  const [engine, setEngine] = useState<ConversionEngine | null>(draft?.engine ?? null);
+  const [markdown, setMarkdown] = useState(draft?.markdown ?? "");
+  const [author, setAuthor] = useState(draft?.author || getDefaultAuthor());
+  const [date, setDate] = useState<Date>(() =>
+    draft?.dateISO ? new Date(draft.dateISO) : new Date(),
+  );
+  const [error, setError] = useState("");
+  const [rightTab, setRightTab] = useState<RightTab>("preview");
+  const { flag: copied, trigger: markCopied } = useTransientFlag(1500);
+  const { flag: sent, trigger: markSent, clear: clearSent } = useTransientFlag(2500);
+
+  const currentDraft: DocDraft = useMemo(
+    () => ({
+      status: status === "ready" ? "ready" : "idle",
+      fileName,
+      sourceFormat,
+      engine,
+      markdown,
+      author,
+      dateISO: date.toISOString(),
+    }),
+    [status, fileName, sourceFormat, engine, markdown, author, date],
+  );
+  useDocDraftPersistence(currentDraft);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      setError("");
+      clearSent();
+      setStatus("converting");
+      setFileName(file.name);
+      try {
+        const result = await convertToMarkdown(file);
+        setMarkdown(result.markdown);
+        setSourceFormat(result.sourceFormat);
+        setEngine(result.engine);
+        setStatus("ready");
+        setRightTab("preview");
+      } catch (err) {
+        setStatus("error");
+        if (err instanceof MissingApiKeyError) {
+          setError(err.message);
+        } else {
+          setError(err instanceof Error ? err.message : "Failed to process the file.");
+        }
+      }
+    },
+    [clearSent],
+  );
+
+  const payload: DocumentPayload = useMemo(
+    () => buildPayload({ markdown, author, date }),
+    [markdown, author, date],
+  );
+
+  const payloadJson = useMemo(() => JSON.stringify(payload, null, 2), [payload]);
+
+  const reset = () => {
+    setStatus("idle");
+    setFileName("");
+    setSourceFormat(null);
+    setEngine(null);
+    setMarkdown("");
+    setError("");
+    clearSent();
+    clearDocDraft();
+  };
+
+  const copyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(payloadJson);
+      markCopied();
+    } catch {
+      setError("Could not copy to the clipboard. Copy the JSON manually from the panel.");
+    }
+  };
+
+  const canSubmit = status === "ready" && markdown.trim().length > 0 && author.trim().length > 0;
+
+  const handleSubmit = () => {
+    console.info("Sending document payload:\n", payloadJson);
+    reset();
+    markSent();
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="shrink-0">
+        <PageHeader
+          title="Documentation"
+          description="Add documentation (PDF or Markdown) to the RAG knowledge base. PDF files are automatically converted to Markdown with Google Gemini."
+        />
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
+        <div className="space-y-4 lg:w-1/2">
+          <UploadZone
+            status={status}
+            fileName={fileName}
+            sourceFormat={sourceFormat}
+            engine={engine}
+            onFile={(file) => void handleFile(file)}
+            onReject={setError}
+            onReset={reset}
+          />
+
+          {error && (
+            <div className="rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
+              {error}
+            </div>
+          )}
+
+          <div className="card p-5">
+            <h3 className="mb-4 text-sm font-semibold text-white">Document metadata</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+                  Author
+                </label>
+                <input
+                  value={author}
+                  onChange={(e) => setAuthor(e.target.value)}
+                  placeholder="Author name"
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+                  Date
+                </label>
+                <DatePicker
+                  selected={date}
+                  onChange={(value: Date | null) => value && setDate(value)}
+                  dateFormat="yyyy-MM-dd"
+                  wrapperClassName="w-full"
+                  className="input"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-2)] px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {sent ? (
+                <>
+                  <Check className="h-4 w-4" /> Sent
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" /> Send
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="card flex min-h-0 flex-col lg:h-full lg:w-1/2">
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+            <div className="flex gap-1">
+              {(["preview", "json"] as RightTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setRightTab(tab)}
+                  className={[
+                    "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                    rightTab === tab
+                      ? "bg-[var(--color-surface-2)] text-white"
+                      : "text-[var(--color-muted)] hover:text-white",
+                  ].join(" ")}
+                >
+                  {tab === "preview" ? "Preview" : "JSON payload"}
+                </button>
+              ))}
+            </div>
+            {rightTab === "json" && (
+              <button
+                onClick={copyJson}
+                className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-white hover:bg-[var(--color-surface-2)]"
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            )}
+          </div>
+
+          <div className="min-h-[420px] flex-1 overflow-auto p-5 lg:min-h-0">
+            {rightTab === "preview" ? (
+              status !== "ready" ? (
+                <div className="flex h-full items-center justify-center text-sm text-[var(--color-muted)]">
+                  Add a file to see the preview.
+                </div>
+              ) : sourceFormat === "text" ? (
+                <pre className="text-sm leading-relaxed break-words whitespace-pre-wrap text-[#e6ebf3]">
+                  {markdown}
+                </pre>
+              ) : (
+                <MarkdownPreview content={markdown} />
+              )
+            ) : (
+              <pre className="text-xs leading-relaxed break-words whitespace-pre-wrap text-[var(--color-muted)]">
+                <code>{payloadJson}</code>
+              </pre>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
