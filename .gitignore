@@ -18,8 +18,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored to repo root so it doesn't swallow frontend dirs like client/src/lib/
+/lib/
+/lib64/
 parts/
 sdist/
 var/

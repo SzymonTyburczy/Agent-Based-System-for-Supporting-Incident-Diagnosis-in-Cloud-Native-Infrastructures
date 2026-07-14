@@ -1,0 +1,125 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-bg: #0b0f17;
+  --color-surface: #111725;
+  --color-surface-2: #161e2e;
+  --color-border: #222c3f;
+  --color-muted: #8a97ab;
+  --color-brand: #4f8cff;
+  --color-brand-2: #7c5cff;
+  --color-success: #29c48f;
+  --color-warning: #f5a524;
+  --color-danger: #f45b69;
+}
+
+@layer components {
+  .card {
+    border-radius: 1rem;
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+  }
+
+  .input {
+    width: 100%;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-border);
+    background-color: var(--color-bg);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: #fff;
+    outline: none;
+  }
+
+  .input::placeholder {
+    color: var(--color-muted);
+  }
+
+  .input:focus {
+    border-color: var(--color-brand);
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: #e6ebf3;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+}
+
+.react-datepicker {
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  font-family: inherit;
+  color: #e6ebf3;
+}
+
+.react-datepicker__header {
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.react-datepicker__current-month,
+.react-datepicker__day-name,
+.react-datepicker__day {
+  color: #e6ebf3;
+}
+
+.react-datepicker__day:hover {
+  background-color: var(--color-border);
+  border-radius: 8px;
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  background-color: var(--color-brand);
+  border-radius: 8px;
+  color: #fff;
+}
+
+.react-datepicker__day--outside-month {
+  color: var(--color-muted);
+}
+
+.react-datepicker__triangle {
+  display: none;
+}
+
+.react-datepicker__navigation-icon::before {
+  border-color: var(--color-muted);
+}
+
+.react-datepicker-popper {
+  z-index: 30;
+}
