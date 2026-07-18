@@ -6,8 +6,7 @@ const STORAGE_KEYS = {
 export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 
 export function getGeminiApiKey(): string {
-  const fromEnv = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-  return (fromEnv ?? "").trim();
+  return (import.meta.env.VITE_GEMINI_API_KEY ?? "").trim();
 }
 
 export function getGeminiModel(): string {

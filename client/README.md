@@ -15,9 +15,11 @@ Diagnosis in Cloud-Native Infrastructures_.
     ```
   - **Send** logs the payload to the browser console and clears the form — the backend
     endpoint is not wired up yet.
-  - A draft (file, content, metadata) is persisted in `localStorage`, so a page refresh
-    does not lose your work.
-- **Issues** — preview of incidents split into _pending_ and _resolved_ (mock data for now).
+  - A draft (file name, converted content, metadata) is persisted in `localStorage`, so a
+    page refresh does not lose your work.
+- **Issues** — incidents split into _pending_ and _resolved_ (mock data for now). Clicking
+  an issue opens `/issues/:id` with the Markdown diagnostic report on the left and an AI
+  chat panel on the right (chat is local-state only — backend data flow pending).
 - **Dashboard** — shortcuts and basic statistics.
 - **Settings** — Gemini model selection and the default document author. The API key is
   configured exclusively via `.env` (see below), not from the UI.
@@ -49,14 +51,14 @@ Get a key in [Google AI Studio](https://aistudio.google.com/apikey) (free tier, 
 
 ## Scripts
 
-| Command                 | Description                            |
-| ----------------------- | -------------------------------------- |
-| `npm run dev`           | start the Vite dev server              |
-| `npm run build`         | typecheck + production build           |
-| `npm test`              | run unit tests (vitest)                |
-| `npm run lint`          | lint with oxlint                       |
-| `npm run format`        | format with Prettier                   |
-| `npm run typecheck`     | TypeScript check without emitting      |
+| Command             | Description                       |
+| ------------------- | --------------------------------- |
+| `npm run dev`       | start the Vite dev server         |
+| `npm run build`     | typecheck + production build      |
+| `npm test`          | run unit tests (vitest)           |
+| `npm run lint`      | lint with oxlint                  |
+| `npm run format`    | format with Prettier              |
+| `npm run typecheck` | TypeScript check without emitting |
 
 ## Stack
 

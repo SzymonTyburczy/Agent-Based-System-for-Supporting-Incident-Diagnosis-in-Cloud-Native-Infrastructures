@@ -15,6 +15,14 @@ export interface DocDraft {
   dateISO: string;
 }
 
+function parseSourceFormat(value: unknown): SourceFormat | null {
+  return value === "pdf" || value === "markdown" || value === "text" ? value : null;
+}
+
+function parseEngine(value: unknown): ConversionEngine | null {
+  return value === "gemini" || value === "passthrough" ? value : null;
+}
+
 export function loadDocDraft(): DocDraft | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
@@ -33,8 +41,8 @@ export function loadDocDraft(): DocDraft | null {
     return {
       status: parsed.status === "ready" ? "ready" : "idle",
       fileName: parsed.fileName,
-      sourceFormat: parsed.sourceFormat ?? null,
-      engine: parsed.engine ?? null,
+      sourceFormat: parseSourceFormat(parsed.sourceFormat),
+      engine: parseEngine(parsed.engine),
       markdown: parsed.markdown,
       author: parsed.author,
       dateISO: parsed.dateISO,
@@ -51,12 +59,31 @@ export function clearDocDraft(): void {
 function saveDocDraft(draft: DocDraft): void {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-  } catch {}
+  } catch {
+    // Quota exceeded (huge converted document) or storage unavailable — drop the
+    // stale draft rather than keep one that no longer matches the screen.
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // Storage fully unavailable — nothing to clean up.
+    }
+  }
 }
 
+/**
+ * Persists the given draft to localStorage, debounced. A draft with no document
+ * and no author is removed instead of saved, so Clear/Send stays cleared.
+ */
 export function useDocDraftPersistence(draft: DocDraft): void {
   useEffect(() => {
-    const id = setTimeout(() => saveDocDraft(draft), SAVE_DEBOUNCE_MS);
+    const id = setTimeout(() => {
+      const empty = draft.status === "idle" && !draft.fileName && !draft.markdown && !draft.author;
+      if (empty) {
+        localStorage.removeItem(DRAFT_KEY);
+      } else {
+        saveDocDraft(draft);
+      }
+    }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [draft]);
 }

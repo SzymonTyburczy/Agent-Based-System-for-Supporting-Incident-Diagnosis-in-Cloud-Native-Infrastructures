@@ -8,6 +8,8 @@ export interface Issue {
   status: IssueStatus;
   createdAt: string;
   summary: string;
+  /** Full issue report in Markdown, shown on the issue detail page. */
+  content: string;
 }
 
 /**
