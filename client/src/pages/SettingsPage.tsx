@@ -47,6 +47,10 @@ export function SettingsPage() {
   const save = () => {
     setGeminiModel(model);
     setDefaultAuthor(author);
+    // Re-read what was actually persisted (a blank model falls back to the
+    // default), so the inputs never show a value that differs from storage.
+    setModel(getGeminiModel());
+    setAuthor(getDefaultAuthor());
     markSaved();
   };
 
@@ -86,7 +90,12 @@ export function SettingsPage() {
           </a>
 
           <div className="mt-5 mb-1.5 flex items-center justify-between">
-            <label className="block text-xs font-medium text-[var(--color-muted)]">Model</label>
+            <label
+              htmlFor="gemini-model"
+              className="block text-xs font-medium text-[var(--color-muted)]"
+            >
+              Model
+            </label>
             <button
               type="button"
               onClick={() => void loadModels()}
@@ -104,13 +113,19 @@ export function SettingsPage() {
 
           {models.length === 0 ? (
             <input
+              id="gemini-model"
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder="Model id, e.g. gemini-flash-latest"
               className="input"
             />
           ) : (
-            <select value={model} onChange={(e) => setModel(e.target.value)} className="input">
+            <select
+              id="gemini-model"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="input"
+            >
               {!models.some((m) => m.id === model) && <option value={model}>{model}</option>}
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -121,7 +136,9 @@ export function SettingsPage() {
           )}
 
           {modelsError ? (
-            <p className="mt-1.5 text-xs text-[var(--color-danger)]">{modelsError}</p>
+            <p role="alert" className="mt-1.5 text-xs text-[var(--color-danger)]">
+              {modelsError}
+            </p>
           ) : (
             <p className="mt-1.5 text-xs text-[var(--color-muted)]">
               {apiKey
@@ -135,10 +152,14 @@ export function SettingsPage() {
 
         <div className="card p-6">
           <h3 className="mb-4 text-sm font-semibold text-white">Default metadata</h3>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+          <label
+            htmlFor="default-author"
+            className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]"
+          >
             Default author
           </label>
           <input
+            id="default-author"
             value={author}
             onChange={(e) => setAuthor(e.target.value)}
             placeholder="Author name"

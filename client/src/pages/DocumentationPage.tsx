@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { Check, Copy, Send } from "lucide-react";
@@ -8,7 +8,7 @@ import { UploadZone, type UploadStatus } from "../components/UploadZone";
 import {
   buildPayload,
   convertToMarkdown,
-  MissingApiKeyError,
+  PAYLOAD_DATE_FORMAT,
   type ConversionEngine,
 } from "../lib/converter";
 import { getDefaultAuthor } from "../lib/settings";
@@ -32,6 +32,8 @@ export function DocumentationPage() {
   );
   const [engine, setEngine] = useState<ConversionEngine | null>(draft?.engine ?? null);
   const [markdown, setMarkdown] = useState(draft?.markdown ?? "");
+  // `||` (not `??`): an empty author persisted in the draft must not shadow
+  // the default author configured later in Settings.
   const [author, setAuthor] = useState(draft?.author || getDefaultAuthor());
   const [date, setDate] = useState<Date>(() =>
     draft?.dateISO ? new Date(draft.dateISO) : new Date(),
@@ -40,6 +42,8 @@ export function DocumentationPage() {
   const [rightTab, setRightTab] = useState<RightTab>("preview");
   const { flag: copied, trigger: markCopied } = useTransientFlag(1500);
   const { flag: sent, trigger: markSent, clear: clearSent } = useTransientFlag(2500);
+  // Guards against a slow conversion resolving after a newer one started.
+  const conversionId = useRef(0);
 
   const currentDraft: DocDraft = useMemo(
     () => ({
@@ -57,24 +61,28 @@ export function DocumentationPage() {
 
   const handleFile = useCallback(
     async (file: File) => {
+      const id = ++conversionId.current;
       setError("");
       clearSent();
       setStatus("converting");
       setFileName(file.name);
+      // Drop the previous file's result up front, so a failure never shows the
+      // old content under the new file's name.
+      setMarkdown("");
+      setSourceFormat(null);
+      setEngine(null);
       try {
         const result = await convertToMarkdown(file);
+        if (id !== conversionId.current) return;
         setMarkdown(result.markdown);
         setSourceFormat(result.sourceFormat);
         setEngine(result.engine);
         setStatus("ready");
         setRightTab("preview");
       } catch (err) {
+        if (id !== conversionId.current) return;
         setStatus("error");
-        if (err instanceof MissingApiKeyError) {
-          setError(err.message);
-        } else {
-          setError(err instanceof Error ? err.message : "Failed to process the file.");
-        }
+        setError(err instanceof Error ? err.message : "Failed to process the file.");
       }
     },
     [clearSent],
@@ -85,22 +93,29 @@ export function DocumentationPage() {
     [markdown, author, date],
   );
 
-  const payloadJson = useMemo(() => JSON.stringify(payload, null, 2), [payload]);
+  // Serializing a multi-MB document on every keystroke is wasted work while the
+  // JSON tab is hidden — compute only when it is actually displayed.
+  const payloadJson = useMemo(
+    () => (rightTab === "json" ? JSON.stringify(payload, null, 2) : ""),
+    [payload, rightTab],
+  );
 
   const reset = () => {
+    conversionId.current++;
     setStatus("idle");
     setFileName("");
     setSourceFormat(null);
     setEngine(null);
     setMarkdown("");
     setError("");
+    setDate(new Date());
     clearSent();
     clearDocDraft();
   };
 
   const copyJson = async () => {
     try {
-      await navigator.clipboard.writeText(payloadJson);
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
       markCopied();
     } catch {
       setError("Could not copy to the clipboard. Copy the JSON manually from the panel.");
@@ -110,7 +125,10 @@ export function DocumentationPage() {
   const canSubmit = status === "ready" && markdown.trim().length > 0 && author.trim().length > 0;
 
   const handleSubmit = () => {
-    console.info("Sending document payload:\n", payloadJson);
+    if (!canSubmit) return;
+    // Stand-in for the future backend request: log the payload that would be
+    // sent, then clear the form.
+    console.info("Sending document payload:\n", JSON.stringify(payload, null, 2));
     reset();
     markSent();
   };
@@ -125,6 +143,7 @@ export function DocumentationPage() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
+        {/* Left column: upload + form (fixed, non-scrolling) */}
         <div className="space-y-4 lg:w-1/2">
           <UploadZone
             status={status}
@@ -137,7 +156,10 @@ export function DocumentationPage() {
           />
 
           {error && (
-            <div className="rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
+            <div
+              role="alert"
+              className="rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
+            >
               {error}
             </div>
           )}
@@ -146,10 +168,14 @@ export function DocumentationPage() {
             <h3 className="mb-4 text-sm font-semibold text-white">Document metadata</h3>
             <div className="space-y-4">
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+                <label
+                  htmlFor="doc-author"
+                  className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]"
+                >
                   Author
                 </label>
                 <input
+                  id="doc-author"
                   value={author}
                   onChange={(e) => setAuthor(e.target.value)}
                   placeholder="Author name"
@@ -157,13 +183,17 @@ export function DocumentationPage() {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+                <label
+                  htmlFor="doc-date"
+                  className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]"
+                >
                   Date
                 </label>
                 <DatePicker
+                  id="doc-date"
                   selected={date}
                   onChange={(value: Date | null) => value && setDate(value)}
-                  dateFormat="yyyy-MM-dd"
+                  dateFormat={PAYLOAD_DATE_FORMAT}
                   wrapperClassName="w-full"
                   className="input"
                 />
@@ -172,7 +202,7 @@ export function DocumentationPage() {
 
             <button
               onClick={handleSubmit}
-              disabled={!canSubmit}
+              disabled={!canSubmit && !sent}
               className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-2)] px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
               {sent ? (
@@ -188,6 +218,7 @@ export function DocumentationPage() {
           </div>
         </div>
 
+        {/* Right column: preview / JSON (only this panel scrolls) */}
         <div className="card flex min-h-0 flex-col lg:h-full lg:w-1/2">
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
             <div className="flex gap-1">
@@ -195,6 +226,7 @@ export function DocumentationPage() {
                 <button
                   key={tab}
                   onClick={() => setRightTab(tab)}
+                  aria-pressed={rightTab === tab}
                   className={[
                     "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
                     rightTab === tab

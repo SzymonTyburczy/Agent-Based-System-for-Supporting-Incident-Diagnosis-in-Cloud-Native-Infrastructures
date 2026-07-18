@@ -11,13 +11,16 @@ Main views:
   are Polish per the agreed backend contract; `data` is a day-precision date, yyyy-MM-dd).
   Send currently logs the payload to the console and clears the form — no backend yet.
   The in-progress draft is persisted to localStorage.
-- **Issues** — split into pending and resolved (mock data).
+- **Issues** — split into pending and resolved (mock data). An issue opens
+  `/issues/:id`: Markdown diagnostic report on the left, AI chat panel on the right
+  (chat is local-state only — data flow to be wired later).
 - **Dashboard** and **Settings** (Gemini model, default author; the API key comes only
   from `VITE_GEMINI_API_KEY` in `client/.env` — it is not configurable from the UI).
 
 Conventions:
 
-- `src/lib/` — pure logic (converter, models, settings, types) with vitest tests alongside.
+- `src/lib/` — pure logic (converter, models, settings, types, format); vitest tests
+  live alongside the tested module (currently `converter.test.ts`).
 - `src/hooks/` — shared hooks (`useDocDraft`, `useTransientFlag`).
 - Shared `.card` / `.input` CSS component classes live in `src/index.css`.
 - Named exports everywhere (no default exports).

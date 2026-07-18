@@ -1,8 +1,9 @@
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CircleDot, Clock, ServerCog } from "lucide-react";
+import { ArrowLeft, Clock, ServerCog } from "lucide-react";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { ChatPanel } from "../components/ChatPanel";
 import { SeverityBadge } from "../components/SeverityBadge";
+import { StatusBadge } from "../components/StatusBadge";
 import { mockIssues } from "../data/mockIssues";
 import { formatIssueDate } from "../lib/format";
 
@@ -36,17 +37,7 @@ export function IssueDetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm text-[var(--color-muted)]">{issue.id}</span>
           <SeverityBadge severity={issue.severity} />
-          <span
-            className={[
-              "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
-              issue.status === "pending"
-                ? "bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
-                : "bg-[var(--color-success)]/15 text-[var(--color-success)]",
-            ].join(" ")}
-          >
-            <CircleDot className="h-3 w-3" />
-            {issue.status === "pending" ? "Pending" : "Resolved"}
-          </span>
+          <StatusBadge status={issue.status} />
         </div>
         <h1 className="mt-2 text-xl font-semibold text-white">{issue.title}</h1>
         <div className="mt-1.5 flex items-center gap-4 text-xs text-[var(--color-muted)]">
@@ -67,9 +58,11 @@ export function IssueDetailPage() {
           <MarkdownPreview content={issue.content} />
         </div>
 
-        {/* Right: AI chat */}
-        <div className="flex min-h-[420px] flex-col lg:h-full lg:w-1/2">
-          <ChatPanel issueId={issue.id} />
+        {/* Right: AI chat. Height is capped below lg so the message list scrolls
+            internally instead of stretching the page. key remounts the panel with
+            fresh state when navigating between issues. */}
+        <div className="flex h-[70dvh] min-h-[420px] flex-col lg:h-full lg:w-1/2">
+          <ChatPanel key={issue.id} issueId={issue.id} />
         </div>
       </div>
     </div>

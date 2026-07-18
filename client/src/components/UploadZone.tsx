@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
 import { FileText, FileType2, Loader2, Sparkles, Upload, X } from "lucide-react";
-import { MAX_FILE_SIZE_BYTES, type ConversionEngine } from "../lib/converter";
+import { ACCEPTED_FILE_TYPES, MAX_FILE_SIZE_BYTES, type ConversionEngine } from "../lib/converter";
 import type { SourceFormat } from "../lib/types";
 
 export type UploadStatus = "idle" | "converting" | "ready" | "error";
@@ -55,11 +55,10 @@ export function UploadZone({
     noClick: true,
     noKeyboard: true,
     maxSize: MAX_FILE_SIZE_BYTES,
-    accept: {
-      "application/pdf": [".pdf"],
-      "text/markdown": [".md", ".markdown", ".mdx"],
-      "text/plain": [".txt"],
-    },
+    // Reject new drops while a conversion is running — a second file racing the
+    // first would pair one file's name with another file's content.
+    disabled: status === "converting",
+    accept: ACCEPTED_FILE_TYPES,
   });
 
   return (

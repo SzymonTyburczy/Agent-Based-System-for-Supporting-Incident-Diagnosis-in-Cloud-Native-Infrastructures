@@ -21,10 +21,13 @@ export function ChatPanel({ issueId }: ChatPanelProps) {
     },
   ]);
   const [input, setInput] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Scroll only the message list, not every scrollable ancestor — scrollIntoView
+    // would also drag the page itself down on stacked (sub-lg) layouts.
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const send = () => {
@@ -47,7 +50,7 @@ export function ChatPanel({ issueId }: ChatPanelProps) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -72,7 +75,7 @@ export function ChatPanel({ issueId }: ChatPanelProps) {
             </div>
             <div
               className={[
-                "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
+                "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed break-words whitespace-pre-wrap",
                 message.role === "user"
                   ? "rounded-tr-sm bg-[var(--color-brand)] text-white"
                   : "rounded-tl-sm bg-[var(--color-surface-2)] text-[#e6ebf3]",
@@ -82,7 +85,6 @@ export function ChatPanel({ issueId }: ChatPanelProps) {
             </div>
           </div>
         ))}
-        <div ref={bottomRef} />
       </div>
 
       <div className="border-t border-[var(--color-border)] p-3">
@@ -91,7 +93,8 @@ export function ChatPanel({ issueId }: ChatPanelProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // isComposing: Enter that commits an IME candidate must not send.
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
               }
@@ -99,11 +102,12 @@ export function ChatPanel({ issueId }: ChatPanelProps) {
             placeholder="Ask about this incident… (Enter to send, Shift+Enter for a new line)"
             rows={2}
             className="input resize-none"
+            aria-label="Message to the diagnostic assistant"
           />
           <button
             onClick={send}
             disabled={!input.trim()}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-brand)] text-white transition-opacity hover:bg-[var(--color-brand)]/90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-brand)] text-white transition-colors hover:bg-[var(--color-brand)]/90 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Send message"
           >
             <Send className="h-4 w-4" />

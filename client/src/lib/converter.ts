@@ -20,29 +20,45 @@ export class MissingApiKeyError extends Error {
   }
 }
 
+// Gemini inline data is limited to ~20 MB per request; leave headroom for the base64 overhead.
 export const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
 const MARKDOWN_EXTENSIONS = [".md", ".markdown", ".mdx"];
+const TEXT_EXTENSIONS = [".txt"];
 
+/**
+ * Single source of truth for accepted file types — feeds both the dropzone
+ * `accept` option and detectSourceFormat below.
+ */
+export const ACCEPTED_FILE_TYPES: Record<string, string[]> = {
+  "application/pdf": [".pdf"],
+  "text/markdown": MARKDOWN_EXTENSIONS,
+  "text/plain": TEXT_EXTENSIONS,
+};
+
+/** Backend contract uses day precision for the `data` field. */
 export const PAYLOAD_DATE_FORMAT = "yyyy-MM-dd";
 
 export function detectSourceFormat(file: File): SourceFormat | null {
   const lower = file.name.toLowerCase();
   if (file.type === "application/pdf" || lower.endsWith(".pdf")) return "pdf";
   if (MARKDOWN_EXTENSIONS.some((ext) => lower.endsWith(ext))) return "markdown";
-  if (lower.endsWith(".txt") || file.type.startsWith("text/")) return "text";
+  if (TEXT_EXTENSIONS.some((ext) => lower.endsWith(ext)) || file.type.startsWith("text/")) {
+    return "text";
+  }
   return null;
 }
 
 async function fileToBase64(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
+  // FileReader encodes natively, off the JS main loop — no multi-MB intermediate
+  // strings and no UI freeze on large PDFs.
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read the file."));
+    reader.readAsDataURL(file);
+  });
+  return dataUrl.slice(dataUrl.indexOf(",") + 1);
 }
 
 const GEMINI_PROMPT = `You are a precise document converter. Convert the attached PDF file into clean Markdown.
@@ -56,6 +72,7 @@ const RETRYABLE_STATUS = [429, 503];
 const MAX_RETRIES = 3;
 
 function isRetryable(err: unknown): boolean {
+  // The @google/genai ApiError carries a numeric status — prefer it over message sniffing.
   const status = (err as { status?: unknown } | null)?.status;
   if (typeof status === "number") {
     return RETRYABLE_STATUS.includes(status);
@@ -135,6 +152,9 @@ export async function convertToMarkdown(file: File): Promise<ConversionResult> {
 
   if (sourceFormat) {
     const markdown = (await file.text()).trim();
+    if (!markdown) {
+      throw new Error("The file is empty.");
+    }
     return { markdown, sourceFormat, engine: "passthrough" };
   }
 

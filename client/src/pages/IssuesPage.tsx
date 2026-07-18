@@ -64,6 +64,7 @@ export function IssuesPage() {
           <button
             key={key}
             onClick={() => setTab(key)}
+            aria-pressed={tab === key}
             className={[
               "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
               tab === key
