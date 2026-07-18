@@ -1,9 +1,7 @@
+import { format, parseISO } from "date-fns";
+
 export function formatIssueDate(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    year: "numeric",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const date = parseISO(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return format(date, "dd/MM/yyyy, HH:mm");
 }

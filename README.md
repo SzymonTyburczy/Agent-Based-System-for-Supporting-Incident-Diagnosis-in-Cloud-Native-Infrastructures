@@ -16,7 +16,9 @@ The objective of this engineering thesis is to design and implement a prototype 
 3. **Knowledge Retrieval**: Uses RAG to find relevant solutions and context from technical documentation.
 4. **Report Generation**: Outputs a comprehensive diagnostic report outlining what went wrong and how to fix it.
 
-*Note: Specific implementation details, technology stack, and installation instructions are currently in the planning phase and will be updated in future iterations.*
+## Repository Layout
+- **`client/`** — IDAR web panel (React + TypeScript + Vite): document ingestion for the RAG knowledge base, incident views with an AI chat panel. Setup and details: [client/README.md](client/README.md).
+- **`example-infrastructure/`** — demo cloud-native deployment with a configured observability stack.
 
 ## Validation
 The proposed solution will be validated using predefined incident scenarios. Its effectiveness will be evaluated through an analysis of the completeness and usefulness of the generated diagnostic reports.

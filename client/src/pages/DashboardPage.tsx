@@ -5,7 +5,7 @@ import { mockIssues } from "../data/mockIssues";
 
 export function DashboardPage() {
   const pending = mockIssues.filter((i) => i.status === "pending").length;
-  const resolved = mockIssues.length - pending;
+  const resolved = mockIssues.filter((i) => i.status === "resolved").length;
 
   const stats = [
     {
