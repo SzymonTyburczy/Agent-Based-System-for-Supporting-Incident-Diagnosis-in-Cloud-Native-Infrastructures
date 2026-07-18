@@ -1,32 +1,11 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { CircleDot, Clock, ServerCog } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
+import { SeverityBadge } from "../components/SeverityBadge";
 import { mockIssues } from "../data/mockIssues";
+import { formatIssueDate } from "../lib/format";
 import type { Issue, IssueStatus } from "../lib/types";
-
-const severityStyles: Record<Issue["severity"], string> = {
-  low: "bg-[var(--color-muted)]/15 text-[var(--color-muted)]",
-  medium: "bg-[var(--color-warning)]/15 text-[var(--color-warning)]",
-  high: "bg-[var(--color-danger)]/15 text-[var(--color-danger)]",
-  critical: "bg-[var(--color-danger)]/25 text-[var(--color-danger)]",
-};
-
-const severityLabel: Record<Issue["severity"], string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  critical: "Critical",
-};
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    year: "numeric",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 const grouped = {
   pending: mockIssues.filter((i) => i.status === "pending"),
@@ -35,16 +14,15 @@ const grouped = {
 
 function IssueCard({ issue }: { issue: Issue }) {
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-brand)]/40">
+    <Link
+      to={`/issues/${issue.id}`}
+      className="block rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-brand)]/40"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs text-[var(--color-muted)]">{issue.id}</span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${severityStyles[issue.severity]}`}
-            >
-              {severityLabel[issue.severity]}
-            </span>
+            <SeverityBadge severity={issue.severity} />
           </div>
           <h3 className="mt-1.5 truncate text-sm font-semibold text-white">{issue.title}</h3>
         </div>
@@ -57,10 +35,10 @@ function IssueCard({ issue }: { issue: Issue }) {
         </span>
         <span className="flex items-center gap-1">
           <Clock className="h-3.5 w-3.5" />
-          {formatDate(issue.createdAt)}
+          {formatIssueDate(issue.createdAt)}
         </span>
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -86,6 +64,7 @@ export function IssuesPage() {
           <button
             key={key}
             onClick={() => setTab(key)}
+            aria-pressed={tab === key}
             className={[
               "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
               tab === key

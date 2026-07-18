@@ -12,9 +12,10 @@ dist
 dist-ssr
 *.local
 
-.env
+# NOTE: .env itself is deliberately TRACKED as an empty template (see README).
+# Only local variants are ignored here; protect your real key with:
+#   git update-index --skip-worktree client/.env
 .env.*
-!.env.example
 
 # Editor directories and files
 .vscode/*
