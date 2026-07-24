@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-07-19T17:01:45Z",
+  "title": "High CPU usage alert in otel-demo namespace",
+  "error_sources": [
+    "container-cpu-high-rate alert",
+    "namespace-level CPU usage metrics",
+    "pod restart history including OOMKilled event",
+    "logs for load-generator container",
+    "Prometheus metrics (partial / missing data)"
+  ],
+  "problem": "The otel-demo namespace is experiencing high CPU usage, likely driven by the load-generator container. This container has a recent history of restarts including an Out Of Memory (OOMKilled) event, suggesting it may be consuming excessive CPU resources and causing the alert to fire. However, specific CPU usage metrics for the load-generator container are unavailable, making this conclusion inferred rather than confirmed. Other containers contributing to CPU usage cannot be ruled out due to incomplete metric data.",
+  "remediations": [
+    "Investigate the load-generator pod's memory and CPU usage history in detail.",
+    "Review and potentially adjust resource limits and requests for the load-generator container.",
+    "Examine updated logs and traces for the load-generator for errors or anomalies.",
+    "Modify Prometheus queries or label selectors to capture per-container CPU metrics for the load-generator.",
+    "Consider scaling down the load-generator or the workload it generates to reduce resource usage."
+  ],
+  "raw_diagnosis": "Diagnosis Report:\n\nProbable Root Cause:\nThe alert \"container-cpu-high-rate\" firing in the \"otel-demo\" namespace indicates a high CPU usage rate by one or more containers. From the gathered data, the overall CPU usage rate for containers in \"otel-demo\" has spiked up to about 11 cpu-seconds per second (normalized units) recently. All pods in \"otel-demo\" are running and ready, but one pod relevant to the \"load-generator\" container has a recent history of restarts including an Out Of Memory (OOMKilled) event. This suggests the load-generator container might be consuming excessive CPU resources, causing the alert to fire. However, specific CPU usage metrics for the load-generator container were unavailable or missing, so this is inferred from aggregate trends.\n\nSuggested Remediation Steps:\n1. Investigate the load-generator pod in more detail, focusing on memory and CPU resource usage in the recent past because its OOMKilled restart and high CPU usage are suspicious.\n2. Review resource limits and requests for the load-generator container to ensure it is appropriately constrained and provisioned.\n3. Check for updated logs or traces for the load-generator to detect any errors or abnormal behavior that could explain resource spikes, though no errors were found in the recent logs sampled.\n4. Monitor fine-grained per-container CPU metrics in Prometheus with adjusted label selectors or relaxed queries to capture missing data on the load-generator specifically.\n5. Consider temporarily scaling the load-generator or load it creates to reduce resource pressure.\n\nUncertainties / Unverified Points:\n- CPU usage by specific container \"load-generator\" was not directly confirmed due to lack of Prometheus data matching that container label.\n- No error logs were found in queried time range for load-generator, but the search may have been too narrow in time or log filter.\n- Cause of OOMKilled in load-generator pod is unknown and could be contributing to CPU pressure.\n- Other containers could also be contributing to high CPU usage but were not isolated fully due to limited metric exploration.\n\nIn summary, the high CPU alert likely stems from the load-generator container stressing resources, with indication from its recent OOMKill and the high total CPU rates in the namespace. Further targeted metric and log analysis, plus reviewing resource limits, are next best steps."
+}

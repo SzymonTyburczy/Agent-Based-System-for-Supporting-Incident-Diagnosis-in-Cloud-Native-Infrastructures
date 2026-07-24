@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-07-19T17:18:24Z",
+  "title": "High CPU usage and OOMKilled restarts in load-generator pod",
+  "error_sources": [
+    "container-cpu-high-rate alert in otel-demo namespace",
+    "Pod status of load-generator-5765f7695c-tbstm",
+    "CPU usage metrics for load-generator pod"
+  ],
+  "problem": "The load-generator pod in the otel-demo namespace is experiencing sustained high CPU usage, reaching over 11 cores at peak times, which triggers the container-cpu-high-rate alert. Additionally, the pod has recently restarted 5 times due to OOMKilled events, indicating prior memory pressure that may be impacting overall resource stability and performance.",
+  "remediations": [
+    "Review and potentially increase CPU and memory resource requests and limits for the load-generator pod.",
+    "Investigate the workload of the load-generator pod to determine causes of high CPU consumption, such as excessive load generation or inefficient processing.",
+    "Monitor for further OOMKilled events and CPU throttling to prevent performance degradation.",
+    "Consider scaling the load-generator workload or optimizing its resource utilization."
+  ],
+  "raw_diagnosis": "The alert \"container-cpu-high-rate\" is firing in the \"otel-demo\" namespace, indicating high CPU usage by a container.\n\nInsights from investigation:\n\n1. Pod Status:\n- The pod \"load-generator-5765f7695c-tbstm\" in the \"otel-demo\" namespace is Running and ready.\n- However, it has had 5 restarts recently due to \"OOMKilled\" (out of memory kill).\n\n2. CPU Usage Metrics:\n- The \"load-generator\" pod shows very high CPU usage rates compared to other pods in the namespace.\n- The CPU usage rate for this pod over the last hour is significantly higher than others, with values reaching over 11 CPU cores in use at peak times.\n- Other pods generally show much lower CPU usage rates.\n\n3. Interpretation:\n- The high CPU load rate originates from the \"load-generator\" pod.\n- This pod has also experienced OOMKills in the past, indicating resource pressure.\n- No warnings or unhealthy conditions reported currently for this pod, but previous restarts due to memory pressure could correlate with excessive CPU resource consumption.\n\nProbable Root Cause:\n- The \"load-generator\" pod in \"otel-demo\" is under high CPU load, triggering the alert.\n- Prior memory pressure (OOMKilled restarts) might contribute to performance issues or resource contention.\n- The overall alert is likely caused by the load-generator's high CPU consumption.\n\nSuggested Remediation:\n- Review resource requests and limits for the \"load-generator\" pod. Consider increasing CPU and memory requests/limits if needed.\n- Investigate the workload of the load-generator to understand why CPU consumption is high — e.g., excessive load generation or inefficient processing.\n- Monitor for further OOMKilled events and CPU throttling that might degrade performance.\n- Optionally, scale the load-generator workload or optimize its resource utilization.\n\nNo other pods show comparable CPU usage that would trigger this alert, so the issue is isolated to the \"load-generator\" workload.\n\nIf more detailed logs or diagnostics are needed, those can be reviewed next for the \"load-generator\" pod."
+}

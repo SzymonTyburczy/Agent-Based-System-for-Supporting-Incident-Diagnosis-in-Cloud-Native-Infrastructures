@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-07-19T17:07:12Z",
+  "title": "High CPU usage alert on load-generator container",
+  "error_sources": [
+    "container-cpu-high-rate alert",
+    "Pod status of load-generator-5765f7695c-tbstm",
+    "container_cpu_usage_seconds_total metrics",
+    "Pod logs"
+  ],
+  "problem": "The load-generator container in the load-generator-5765f7695c-tbstm pod is experiencing sustained high CPU usage, triggering the high CPU alert. The pod has a history of OOMKilled terminations but is currently running without errors in the logs. It is unclear whether the high CPU usage is expected during load testing or caused by inefficiencies or bugs in the application.",
+  "remediations": [
+    "Investigate the load-generator application for causes of high CPU usage to determine if it is expected behavior or a problem.",
+    "Consider scaling out the load-generator workload to distribute the CPU load if unintended.",
+    "Optimize CPU usage of the load-generator application if possible.",
+    "Increase CPU resource limits and requests to prevent further OOM kills related to CPU pressure.",
+    "Monitor for additional pod restarts due to resource exhaustion.",
+    "Review overall cluster resource capacity to ensure it supports high CPU workloads like load-generator."
+  ],
+  "raw_diagnosis": "Report:\n\n1. Alert: The \"container-cpu-high-rate\" alert is firing in the \"otel-demo\" namespace for container CPU usage being high.\n\n2. Pod Status: The \"load-generator-5765f7695c-tbstm\" pod in the otel-demo namespace is running and ready but has a history of 4 restarts due to being OOMKilled previously (exit code 137). There are no current unhealthy conditions or recent warning events for this pod.\n\n3. CPU Usage Metrics: The container_cpu_usage_seconds_total rate for the last 10 minutes indicates very high CPU utilization for the \"load-generator-5765f7695c-tbstm\" pod, with rates around 9 to 11 CPU cores used on average. This clearly supports the alert that this container is experiencing high CPU usage.\n\n4. Logs: No error logs were found for this pod in the last 10 minutes; the log stream queried returned no matching entries.\n\nProbable Root Cause:\nThe high CPU alert is caused by sustained high CPU usage by the \"load-generator\" container in the \"load-generator-5765f7695c-tbstm\" pod. The container has recently experienced OOM kills likely due to resource pressure, but is currently running. The alert is accurate and reflective of actual high CPU consumption by the load-generator workload.\n\nSuggested Remediation:\n- Investigate the load-generator application to determine why it's consuming high CPU; this might be expected behavior during load testing or indicate inefficient processing.\n- If unintended, consider scaling out the load-generator workload or optimizing its CPU usage.\n- Increase CPU resource limits/requests if OOM kill incidents continue and are tied to CPU pressure.\n- Monitor for further pods restarting due to resource exhaustion.\n- Review cluster resource availability to ensure sufficient capacity for high CPU workloads like load-generator.\n\nUncertainty:\n- No errors in logs means no clear internal faults detected.\n- The cause of high CPU usage (expected load vs. bug) is unknown from current data; application-level analysis needed."
+}

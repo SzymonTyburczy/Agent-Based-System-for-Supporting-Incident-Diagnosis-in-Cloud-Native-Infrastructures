@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-07-19T16:12:09Z",
+  "title": "Prometheus cannot scrape metrics from otel-collector pod",
+  "error_sources": [
+    "Prometheus metric 'up' for otel-collector-6959f75b6d-r6dc7",
+    "kubectl diagnostics on otel-collector pod",
+    "otel-collector pod logs"
+  ],
+  "problem": "Prometheus is unable to scrape the metrics endpoint of the otel-collector pod, resulting in a 'TargetDown' alert. The pod itself is healthy with no restarts or errors, indicating the issue is likely a connectivity or configuration problem preventing Prometheus from reaching the metrics endpoint. Without access to network or Prometheus configs, the exact root cause remains uncertain.",
+  "remediations": [
+    "Check Prometheus scrape configuration for the otel-collector job to ensure the target endpoint is correct and reachable.",
+    "Verify network connectivity and DNS resolution from Prometheus to the otel-collector pod IP and port 8888.",
+    "Inspect network policies or firewall rules that might block Prometheus scraping.",
+    "Confirm the otel-collector container is properly serving metrics on the expected port inside the pod."
+  ],
+  "raw_diagnosis": "Report:\n\nThe root cause of the \"TargetDown\" alert for the \"otel-collector\" job in the \"otel-demo\" namespace is that the Prometheus metric \"up\" for the pod \"otel-collector-6959f75b6d-r6dc7\" has been consistently 0 (down) over the last hour. This indicates that Prometheus is unable to scrape the metrics endpoint of the OpenTelemetry Collector pod, so it considers the target unreachable.\n\nThe pod \"otel-collector-6959f75b6d-r6dc7\" is running and ready with no restarts or unhealthy conditions, and no recent warning events were found in its kubectl diagnostics. There are also no error logs found in the collector pod logs in the last hour, suggesting the pod itself is not crashing or logging errors.\n\nProbable reason is a network connectivity or service endpoint issue preventing Prometheus from scraping the otel-collector metrics. It could be a misconfiguration in the Prometheus scrape target or network policies/firewalls blocking access.\n\nSuggested remediation steps:\n1. Check Prometheus scrape configuration for the otel-collector job to verify the target endpoint is correct and reachable.\n2. Verify network connectivity and DNS resolution from Prometheus to the otel-collector pod IP and port 8888 (metrics endpoint).\n3. Check for any network policies or firewall rules that might prevent Prometheus scraping.\n4. Confirm the otel-collector container is serving metrics properly on the expected port inside the pod.\n\nRemaining uncertainty: Without network or Prometheus configuration access, we cannot confirm the exact connectivity cause but the telemetry points clearly to \"target down\" at metrics scrape level with a healthy pod."
+}

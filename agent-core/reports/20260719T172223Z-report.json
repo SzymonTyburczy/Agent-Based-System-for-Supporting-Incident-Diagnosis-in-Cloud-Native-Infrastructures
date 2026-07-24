@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-07-19T17:22:23Z",
+  "title": "High CPU and OOMKilled on load-generator pod",
+  "error_sources": [
+    "container-cpu-high-rate alert",
+    "pod diagnostics for load-generator-5765f7695c-tbstm",
+    "termination reason logs showing OOMKilled (exit code 137)"
+  ],
+  "problem": "The load-generator container in the specified pod is experiencing high CPU usage that appears to cause resource contention, resulting in repeated OOMKilled events. Although the container is currently running and ready with no active warnings, the frequent restarts due to out-of-memory issues indicate insufficient memory resources or workload issues. The exact cause of the high CPU usage remains unclear and may require deeper application-level analysis.",
+  "remediations": [
+    "Review and adjust resource requests and limits for CPU and memory on the affected pod/container.",
+    "Monitor CPU and memory utilization trends to identify workload patterns and optimize resource usage.",
+    "Consider scaling the workload horizontally or optimizing the application to reduce CPU demand.",
+    "Conduct application-level profiling to determine the source of increased CPU consumption.",
+    "Assess the effects of container restarts on application performance and behavior."
+  ],
+  "raw_diagnosis": "Report:\nThe alert \"container-cpu-high-rate\" is firing, indicating high CPU usage rate in a container within the \"otel-demo\" namespace. The high CPU usage metric corresponds to the pod \"load-generator-5765f7695c-tbstm.\" \n\nPod diagnostics show that the \"load-generator\" container in this pod is running and ready but has had 5 restarts, with the most recent previous termination reason being \"OOMKilled\" (Out Of Memory killed, exit code 137). Despite the OOM kills, there are no current unhealthy conditions or recent warning events reported for this pod.\n\nThe root cause seems to be related to high CPU usage by the \"load-generator\" container, which might be causing resource contention and leading to OOM kill events.\n\nSuggested remediation steps:\n- Investigate the resource requests and limits for this pod/container to ensure it has adequate CPU and memory allocated.\n- Monitor CPU and memory usage trends to better understand workload patterns and optimize resource allocation.\n- If the workload is expected to generate high CPU load, consider scaling out or optimizing the workload to reduce resource pressure.\n\nRemaining uncertainty:\n- The exact reason for the high CPU usage is not determinable from the current data and may require application-level investigation or profiling.\n- The impact of the restarts on application behavior or overall workload should be reviewed."
+}

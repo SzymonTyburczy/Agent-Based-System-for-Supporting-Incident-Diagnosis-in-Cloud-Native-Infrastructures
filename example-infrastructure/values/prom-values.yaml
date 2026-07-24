@@ -26,8 +26,50 @@ prometheus:
 
 alertmanager:
   alertmanagerSpec:
-    replicas: 1
+    # See "Networking" below — required to make host.docker.internal
+    # resolve inside the Alertmanager pod on Docker Desktop.
+    hostAliases:
+      - ip: 192.168.65.254
+        hostnames:
+          - "host.docker.internal"
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: agent-webhook
+      group_by: ['namespace', 'alertname']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # CRITICAL: kube-prometheus-stack's default alertmanager config
+        # routes the always-firing "Watchdog" heartbeat alert (and
+        # "InfoInhibitor") to a null receiver — setting alertmanager.config
+        # at all REPLACES that default wholesale, not merges with it. Omit
+        # this and the webhook gets a "firing" call for Watchdog forever,
+        # roughly every group_interval, for an alert that means nothing is
+        # wrong.
+        - receiver: "null"
+          matchers:
+            - alertname =~ "InfoInhibitor|Watchdog"
+    receivers:
+      - name: "null"
+      - name: agent-webhook
+        webhook_configs:
+          - url: http://host.docker.internal:8090/alerts/webhook
+            send_resolved: true
+            http_config:
+              authorization:
+                credentials: a_12345!
 
 # Disable node-exporter on Docker Desktop Windows to avoid root mount permission issues
 nodeExporter:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
   enabled: false
