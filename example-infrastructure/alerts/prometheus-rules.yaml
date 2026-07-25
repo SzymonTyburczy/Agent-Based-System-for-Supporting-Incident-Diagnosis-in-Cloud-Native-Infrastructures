@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: custom-thesis-alerts
+  namespace: observability
+  labels:
+    release: prom-stack
+spec:
+  groups:
+  - name: ThesisAlerts
+    rules:
+    - alert: AdServiceHighCpu
+      expr: rate(container_cpu_usage_seconds_total{namespace="otel-demo", pod=~"ad-.*"}[1m]) > 1
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Ad Service CPU usage is extremely high"
+        description: "Ad Service CPU usage has exceeded the threshold of 1.0"
+    - alert: CheckoutServiceErrors
+      expr: sum(rate(rpc_server_duration_milliseconds_count{job=~".*checkout.*", rpc_grpc_status_code!="0"}[5m])) > 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Checkout Service is returning errors"
+        description: "Checkout Service gRPC error rate is non-zero"
+    - alert: KafkaConsumerFrozen
+      expr: sum(rate(kafka_consumer_records_consumed_total[2m])) == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Kafka consumer has stopped processing"
+        description: "Kafka consumer rate dropped to 0, indicating a frozen consumer"
