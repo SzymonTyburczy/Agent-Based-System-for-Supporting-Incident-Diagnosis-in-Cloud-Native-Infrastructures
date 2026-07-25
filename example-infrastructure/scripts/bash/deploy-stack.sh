@@ -44,6 +44,10 @@ helm upgrade --install grafana-mcp grafana-community/grafana-mcp -n observabilit
 echo -e "\n[4/5] Deploying OpenTelemetry Demo e-commerce application..."
 helm upgrade --install otel-demo open-telemetry/opentelemetry-demo -n otel-demo -f "${VALUES_DIR}/otel-demo-values.yaml"
 
+# 4.5 Deploy custom thesis alerts
+echo -e "\n[4.5/5] Deploying Custom Prometheus Alerts..."
+kubectl apply -f "${EXAMPLE_INFRA_DIR}/alerts"
+
 # 5. Start background port forwarding
 echo -e "\n[5/5] Starting background port forwarding..."
 
