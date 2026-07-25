@@ -7,8 +7,10 @@ components:
   load-generator:
     replicas: 1     # Automated store interaction script (generates traffic, metrics, and logs)
     resources:
+      requests:
+        memory: 100Mi
       limits:
-        memory: 350Mi
+        memory: 1Gi
   flagd:
     replicas: 1     # Feature flags & synthetic fault injection control panel
 
@@ -73,8 +75,10 @@ opensearch:
 opentelemetry-collector:
   mode: deployment
   resources:
-    limits:
+    requests:
       memory: 100Mi
+    limits:
+      memory: 1Gi
   presets:
     hostMetrics:
       enabled: false
@@ -90,11 +94,19 @@ opentelemetry-collector:
         endpoint: "http://loki.observability.svc.cluster.local:3100/otlp"
         tls:
           insecure: true
+      prometheusremotewrite:
+        endpoint: "http://prom-stack-kube-prometheus-prometheus.observability.svc.cluster.local:9090/api/v1/write"
+        tls:
+          insecure: true
     service:
       pipelines:
         traces:
           receivers: [otlp]
           processors: [batch]
           exporters: [otlp/tempo, spanmetrics]
+        metrics:
+          receivers: [otlp, spanmetrics]
+          processors: [batch]
+          exporters: [prometheusremotewrite]
   serviceMonitor:
     enabled: true

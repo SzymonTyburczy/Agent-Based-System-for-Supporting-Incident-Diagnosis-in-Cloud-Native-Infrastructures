@@ -4,8 +4,21 @@
 
 grafana:
   adminPassword: "admin"
-  # Automatically provision Loki and Tempo as Grafana data sources
+  sidecar:
+    datasources:
+      defaultDatasourceEnabled: false
+  # Automatically provision Loki, Tempo and configure Prometheus to manage alerts
   additionalDataSources:
+    - name: Prometheus
+      type: prometheus
+      uid: prometheus
+      url: http://prom-stack-kube-prometheus-prometheus.observability:9090/
+      access: proxy
+      isDefault: true
+      jsonData:
+        manageAlerts: true
+        httpMethod: POST
+        timeInterval: 30s
     - name: Loki
       type: loki
       url: http://loki.observability.svc.cluster.local:3100
@@ -20,6 +33,7 @@ grafana:
 
 prometheus:
   prometheusSpec:
+    enableRemoteWriteReceiver: true
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     retention: 2d
@@ -27,6 +41,23 @@ prometheus:
 alertmanager:
   alertmanagerSpec:
     replicas: 1
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'job']
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+      receiver: 'agent-webhook'
+      routes:
+      - matchers:
+        - alertname=~"AdServiceHighCpu|CheckoutServiceErrors|KafkaConsumerFrozen"
+        receiver: 'agent-webhook'
+    receivers:
+    - name: 'agent-webhook'
+      webhook_configs:
+      - url: 'http://my-intelligent-agent:8080/api/v1/alerts'
 
 # Disable node-exporter on Docker Desktop Windows to avoid root mount permission issues
 nodeExporter:

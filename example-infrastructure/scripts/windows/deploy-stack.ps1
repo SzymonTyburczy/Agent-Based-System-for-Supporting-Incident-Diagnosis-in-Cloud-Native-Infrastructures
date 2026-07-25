@@ -49,6 +49,10 @@ helm upgrade --install grafana-mcp grafana-community/grafana-mcp -n observabilit
 Write-Host "`n[4/5] Deploying OpenTelemetry Demo e-commerce application..." -ForegroundColor Yellow
 helm upgrade --install otel-demo open-telemetry/opentelemetry-demo -n otel-demo -f "$ValuesDir\otel-demo-values.yaml"
 
+# 4.5 Deploy custom thesis alerts
+Write-Host "`n[4.5/5] Deploying Custom Prometheus Alerts..." -ForegroundColor Yellow
+kubectl apply -f "$ExampleInfraDir\alerts"
+
 # 5. Start persistent background port forwarding
 Write-Host "`n[5/5] Starting persistent port forwarding windows..." -ForegroundColor Yellow
 
