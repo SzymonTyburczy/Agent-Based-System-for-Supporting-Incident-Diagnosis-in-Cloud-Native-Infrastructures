@@ -1,16 +1,10 @@
-<<<<<<< HEAD
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Clock, Loader2, ServerCog } from "lucide-react";
-=======
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Clock, ServerCog } from "lucide-react";
->>>>>>> main
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { ChatPanel } from "../components/ChatPanel";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { StatusBadge } from "../components/StatusBadge";
-<<<<<<< HEAD
 import { fetchIssue, updateIssueStatus } from "../lib/api";
 import { formatIssueDate } from "../lib/format";
 import type { Issue } from "../lib/types";
@@ -70,25 +64,13 @@ export function IssueDetailPage() {
       </div>
     );
   }
-=======
-import { mockIssues } from "../data/mockIssues";
-import { formatIssueDate } from "../lib/format";
-
-export function IssueDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const issue = mockIssues.find((i) => i.id === id);
->>>>>>> main
 
   if (!issue) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
-<<<<<<< HEAD
         <p className="text-sm text-[var(--color-muted)]">
           {loadError ? `Couldn't load issue ${id}: ${loadError}` : `Issue ${id} was not found.`}
         </p>
-=======
-        <p className="text-sm text-[var(--color-muted)]">Issue {id} was not found.</p>
->>>>>>> main
         <Link
           to="/issues"
           className="flex items-center gap-1.5 text-sm text-[var(--color-brand)] hover:underline"
@@ -112,7 +94,6 @@ export function IssueDetailPage() {
           <span className="font-mono text-sm text-[var(--color-muted)]">{issue.id}</span>
           <SeverityBadge severity={issue.severity} />
           <StatusBadge status={issue.status} />
-<<<<<<< HEAD
           <button
             onClick={toggleStatus}
             disabled={updating}
@@ -124,9 +105,6 @@ export function IssueDetailPage() {
         {updateError ? (
           <p className="mt-1.5 text-xs text-[var(--color-danger)]">{updateError}</p>
         ) : null}
-=======
-        </div>
->>>>>>> main
         <h1 className="mt-2 text-xl font-semibold text-white">{issue.title}</h1>
         <div className="mt-1.5 flex items-center gap-4 text-xs text-[var(--color-muted)]">
           <span className="flex items-center gap-1">
