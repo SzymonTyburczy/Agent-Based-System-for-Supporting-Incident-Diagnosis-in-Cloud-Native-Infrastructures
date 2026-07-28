@@ -7,6 +7,7 @@ export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 
 export function getGeminiApiKey(): string {
   return (import.meta.env.VITE_GEMINI_API_KEY ?? "").trim();
+<<<<<<< HEAD
 }
 
 export function getAgentApiUrl(): string {
@@ -15,6 +16,8 @@ export function getAgentApiUrl(): string {
 
 export function getAgentApiToken(): string {
   return (import.meta.env.VITE_AGENT_API_TOKEN ?? "").trim();
+=======
+>>>>>>> main
 }
 
 export function getGeminiModel(): string {

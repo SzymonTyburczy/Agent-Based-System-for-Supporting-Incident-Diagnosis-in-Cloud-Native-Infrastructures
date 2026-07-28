@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+<<<<<<< HEAD
 import { AlertTriangle, CircleDot, Clock, ServerCog } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityBadge } from "../components/SeverityBadge";
@@ -8,6 +9,21 @@ import { formatIssueDate } from "../lib/format";
 import type { IssueStatus, IssueSummary } from "../lib/types";
 
 function IssueCard({ issue }: { issue: IssueSummary }) {
+=======
+import { CircleDot, Clock, ServerCog } from "lucide-react";
+import { PageHeader } from "../components/PageHeader";
+import { SeverityBadge } from "../components/SeverityBadge";
+import { mockIssues } from "../data/mockIssues";
+import { formatIssueDate } from "../lib/format";
+import type { Issue, IssueStatus } from "../lib/types";
+
+const grouped = {
+  pending: mockIssues.filter((i) => i.status === "pending"),
+  resolved: mockIssues.filter((i) => i.status === "resolved"),
+};
+
+function IssueCard({ issue }: { issue: Issue }) {
+>>>>>>> main
   return (
     <Link
       to={`/issues/${issue.id}`}

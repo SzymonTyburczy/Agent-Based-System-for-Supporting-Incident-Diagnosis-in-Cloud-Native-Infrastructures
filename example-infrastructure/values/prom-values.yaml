@@ -4,8 +4,21 @@
 
 grafana:
   adminPassword: "admin"
-  # Automatically provision Loki and Tempo as Grafana data sources
+  sidecar:
+    datasources:
+      defaultDatasourceEnabled: false
+  # Automatically provision Loki, Tempo and configure Prometheus to manage alerts
   additionalDataSources:
+    - name: Prometheus
+      type: prometheus
+      uid: prometheus
+      url: http://prom-stack-kube-prometheus-prometheus.observability:9090/
+      access: proxy
+      isDefault: true
+      jsonData:
+        manageAlerts: true
+        httpMethod: POST
+        timeInterval: 30s
     - name: Loki
       type: loki
       url: http://loki.observability.svc.cluster.local:3100
@@ -20,14 +33,17 @@ grafana:
 
 prometheus:
   prometheusSpec:
+    enableRemoteWriteReceiver: true
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     retention: 2d
 
 alertmanager:
   alertmanagerSpec:
-    # See "Networking" below — required to make host.docker.internal
-    # resolve inside the Alertmanager pod on Docker Desktop.
+    replicas: 1
+    # See "Networking" in agent-core/README.md — required to make
+    # host.docker.internal resolve inside the Alertmanager pod on Docker
+    # Desktop.
     hostAliases:
       - ip: 192.168.65.254
         hostnames:
@@ -37,10 +53,10 @@ alertmanager:
       resolve_timeout: 5m
     route:
       receiver: agent-webhook
-      group_by: ['namespace', 'alertname']
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 4h
+      group_by: ['namespace', 'alertname', 'job']
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
       routes:
         # CRITICAL: kube-prometheus-stack's default alertmanager config
         # routes the always-firing "Watchdog" heartbeat alert (and
@@ -52,6 +68,12 @@ alertmanager:
         - receiver: "null"
           matchers:
             - alertname =~ "InfoInhibitor|Watchdog"
+        # New thesis-demo alerts (custom-thesis-alerts.yaml) — explicit for
+        # documentation purposes; they'd hit agent-webhook via the default
+        # receiver anyway, but this makes the intent visible in the file.
+        - receiver: agent-webhook
+          matchers:
+            - alertname =~ "AdServiceHighCpu|CheckoutServiceErrors|KafkaConsumerFrozen"
     receivers:
       - name: "null"
       - name: agent-webhook

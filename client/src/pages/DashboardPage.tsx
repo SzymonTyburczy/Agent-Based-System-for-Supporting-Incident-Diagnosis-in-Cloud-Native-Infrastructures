@@ -4,9 +4,14 @@ import { PageHeader } from "../components/PageHeader";
 import { useReports } from "../hooks/useReports";
 
 export function DashboardPage() {
+<<<<<<< HEAD
   const { issues, loading } = useReports();
   const pending = issues.filter((i) => i.status === "pending").length;
   const resolved = issues.filter((i) => i.status === "resolved").length;
+=======
+  const pending = mockIssues.filter((i) => i.status === "pending").length;
+  const resolved = mockIssues.filter((i) => i.status === "resolved").length;
+>>>>>>> main
 
   const stats = [
     {

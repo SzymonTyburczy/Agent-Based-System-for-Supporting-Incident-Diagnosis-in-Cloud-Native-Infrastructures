@@ -17,7 +17,10 @@ The objective of this engineering thesis is to design and implement a prototype 
 4. **Report Generation**: Outputs a comprehensive diagnostic report outlining what went wrong and how to fix it.
 
 ## Repository Layout
+<<<<<<< HEAD
 - **`agent-core/`** — the diagnostic agent (Python/FastAPI): receives alerts, investigates using LLM-driven tool calls (kubectl, Grafana/LGTM via MCP), and produces the structured incident reports the client displays. Setup and details: [agent-core/README.md](agent-core/README.md).
+=======
+>>>>>>> main
 - **`client/`** — IDAR web panel (React + TypeScript + Vite): document ingestion for the RAG knowledge base, incident views with an AI chat panel. Setup and details: [client/README.md](client/README.md).
 - **`example-infrastructure/`** — demo cloud-native deployment with a configured observability stack.
 

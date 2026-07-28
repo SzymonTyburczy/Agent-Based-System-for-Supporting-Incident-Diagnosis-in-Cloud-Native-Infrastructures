@@ -17,6 +17,7 @@ Diagnosis in Cloud-Native Infrastructures_.
     endpoint is not wired up yet.
   - A draft (file name, converted content, metadata) is persisted in `localStorage`, so a
     page refresh does not lose your work.
+<<<<<<< HEAD
 - **Issues** — incidents split into _pending_ and _resolved_, loaded from the diagnostic
   agent (`agent-core`) via its REST API and kept in sync live over Server-Sent Events — a
   new investigation or a status change appears without refreshing the page. Clicking an
@@ -24,6 +25,12 @@ Diagnosis in Cloud-Native Infrastructures_.
   resolved"/"Reopen" action, and an AI chat panel on the right (chat is still local-state
   only — RAG-backed chat wiring pending).
 - **Dashboard** — shortcuts and basic statistics, also sourced live from `agent-core`.
+=======
+- **Issues** — incidents split into _pending_ and _resolved_ (mock data for now). Clicking
+  an issue opens `/issues/:id` with the Markdown diagnostic report on the left and an AI
+  chat panel on the right (chat is local-state only — backend data flow pending).
+- **Dashboard** — shortcuts and basic statistics.
+>>>>>>> main
 - **Settings** — Gemini model selection and the default document author. The API key is
   configured exclusively via `.env` (see below), not from the UI.
 
