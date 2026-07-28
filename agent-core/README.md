@@ -1,4 +1,4 @@
-# agent-core — extensible agent skeleton (role 2 of the team split)
+# agent-core — extensible agent skeleton
 
 ## How the agent works, in plain language
 
@@ -71,15 +71,25 @@ agent_core/
     loop.py                  #   AgentLoop — ReAct loop
   incident.py              # system prompt (with current time), incident description
                             # (from live firing alerts via MCP, or an Alertmanager webhook
-                            # payload, or a fallback question), and alert-change detection
-                            # for the polling loop — pure, unit-tested functions; main.py
-                            # and webhook_server.py only wire them to actual calls
+                            # payload, or a fallback question), IncidentMeta extraction
+                            # (service/severity from alert labels), and alert-change
+                            # detection for the polling loop — pure, unit-tested functions;
+                            # main.py and webhook_server.py only wire them to actual calls
   report.py                # turns the final free-text diagnosis into a structured
-                            # {title, error_sources, problem, remediations} JSON report
-                            # and saves it to disk — see "Saving diagnosis reports" below
+                            # {title, summary, error_sources, problem, remediations} JSON
+                            # report, renders it as Markdown for the client, and saves the
+                            # JSON to disk — see "Saving diagnosis reports" below
+  reports_store.py         # ReportsStore — SQLite-backed, mutable status (pending/
+                            # resolved) counterpart to the immutable JSON files, read by
+                            # the /reports* endpoints — see "Serving reports to the client"
+  report_events.py         # ReportEventBroadcaster — in-process pub/sub feeding the
+                            # /reports/stream SSE endpoint
+  reports_api.py           # Pydantic schemas (ReportSummary/ReportDetail/StatusUpdate)
+                            # for the /reports* endpoints
   config.py               # pydantic-settings + provider factory (build_provider)
 main.py                  # polling entry point (or single-shot with AGENT_RUN_ONCE=true)
-webhook_server.py        # push entry point — FastAPI receiver for Alertmanager webhooks
+webhook_server.py        # push entry point — FastAPI receiver for Alertmanager webhooks,
+                          # AND the client-facing /reports* API (list/detail/status/SSE)
 tests/                    # tests on mocks — no API keys or a live MCP server required
 ```
 
@@ -183,14 +193,30 @@ Coverage includes:
   deterministic in tests), building the incident description from
   firing-alert data vs. falling back to the example question, the
   alert-signature comparison used to avoid re-investigating an alert that's
-  still firing on every poll cycle, and parsing Alertmanager's webhook
+  still firing on every poll cycle, parsing Alertmanager's webhook
   payload (firing vs. resolved, malformed input, multiple alerts in one
-  group),
+  group), and extracting `service`/`severity` from a webhook payload's own
+  labels (preferring `groupLabels`, falling back through the alert's own
+  labels and a candidate list of service-ish label names, defaulting to
+  "unknown" rather than raising),
 - `report`: extracting the fixed fields from a valid structuring response
-  (including one wrapped in a markdown code fence), the graceful fallback
-  when that response isn't valid JSON or the call fails outright, writing
-  the expected JSON file structure to disk, and creating missing output
-  directories.
+  (including one wrapped in a markdown code fence), the `summary` fallback
+  when the model omits it, the graceful fallback when the response isn't
+  valid JSON or the call fails outright, rendering the Markdown shown to
+  the client, writing the expected JSON file structure to disk, and
+  creating missing output directories,
+- `reports_store`: inserting and round-tripping a report, filtering/
+  ordering by status, rejecting an invalid status, and updating status on
+  an existing vs. unknown id,
+- `report_events`: subscribing/publishing/unsubscribing, multiple
+  subscribers each receiving the same event, and a full subscriber queue
+  dropping its oldest event instead of blocking the publisher,
+- `reports_api`: the summary schema excluding detail-only fields (e.g.
+  `content_md`) and the status update schema rejecting anything outside
+  `pending`/`resolved`,
+- the `/reports*` endpoints themselves (list/detail/status update),
+  including the 404s, the query-param token fallback the SSE stream relies
+  on, and behaving as open-access when no `CLIENT_API_TOKEN` is set.
 
 ## Known issue: rate limiting when registering every MCP tool
 
@@ -362,6 +388,13 @@ export OPENAI_API_KEY=...
 uvicorn webhook_server:app --host 0.0.0.0 --port 8090
 ```
 
+This single process serves both `POST /alerts/webhook` (Alertmanager →
+agent) and the client-facing `/reports*` endpoints described in "Serving
+reports to the client" below — no separate service to run. If the web
+client is being served from somewhere other than `http://localhost:*`, or
+`CLIENT_API_TOKEN` is set, see that section for the relevant `.env`
+settings (`CLIENT_ALLOWED_ORIGINS`, `CLIENT_API_TOKEN`, `REPORTS_DB_PATH`).
+
 ### Wiring Alertmanager to call it
 
 This is a change to the infrastructure component's Helm values (e.g.
@@ -480,6 +513,7 @@ Every report has exactly these fields:
 {
   "generated_at": "2026-07-18T14:30:00Z",
   "title": "Checkout failing due to payment service timeouts",
+  "summary": "Checkout is failing because payment requests are timing out under load.",
   "error_sources": [
     "checkout pod logs (namespace otel-demo)",
     "payment error-rate metric (query_prometheus)"
@@ -493,9 +527,11 @@ Every report has exactly these fields:
 }
 ```
 
-`raw_diagnosis` is always included, even when structuring goes perfectly —
-nothing is thrown away in favour of the structured fields, so the original
-reasoning stays inspectable. If the structuring call itself fails to
+`summary` is a one-sentence version for a list view — if the model omits
+it, `parse_report_json` falls back to a truncated `problem` rather than an
+empty field. `raw_diagnosis` is always included, even when structuring
+goes perfectly — nothing is thrown away in favour of the structured
+fields, so the original reasoning stays inspectable. If the structuring call itself fails to
 produce valid JSON (or fails outright, e.g. a rate limit), `parse_report_json`
 falls back to `title: "Untitled incident report"` and `problem` set to the
 raw diagnosis text, rather than losing the finding entirely — the report
@@ -505,11 +541,95 @@ Reports land in `REPORT_OUTPUT_DIR` (default `./reports`, created
 automatically if missing), one file per investigation, named
 `<UTC timestamp>-report.json` so concurrent or repeated runs never collide
 or overwrite each other. Both `main.py` and `webhook_server.py` save a
-report after every investigation — this is currently local disk only, as
-requested; shipping reports somewhere else (a database, an S3-like bucket,
-a dashboard) would be a separate, later integration point, not a change to
-`report.py` itself, since `save_report()`'s only job is "write this dict to
-a path".
+report after every investigation. This JSON file is an immutable, append-
+only artifact — good as a durable log, but not the whole story: the web
+client also needs a mutable `status` (pending/resolved) per report, which
+doesn't belong on a timestamped file. That's what `reports_store.py`
+handles — see the next section — writing to it does not change or remove
+the JSON file; the two are complementary, not alternatives.
+
+## Serving reports to the client
+
+The `client/` web panel (the IDAR web app, see its own README) needs to
+*read* finished reports and *toggle* a status on them — neither of which
+the JSON-file log alone supports well (files are immutable, and grepping a
+directory doesn't scale). `webhook_server.py`'s FastAPI app now serves
+both concerns, alongside its original job of receiving Alertmanager
+webhooks.
+
+### `reports_store.py`: a small, mutable store on the side
+
+`ReportsStore` wraps a single SQLite connection (stdlib, no new
+dependency) — one row per finished investigation, with the same
+narrative fields as the JSON report plus what the client actually needs to
+render a list/detail view:
+
+- `id` — a `uuid4`, since nothing else in the report is guaranteed unique
+  the way a report's filename timestamp is.
+- `service` / `severity` — **not** invented by the LLM. Pulled straight
+  from the alert's own labels by `incident.py::extract_incident_meta_from_webhook`
+  (`groupLabels` first, then the first firing alert's labels, falling back
+  through `service → job → app → app_kubernetes_io_name → namespace` since
+  this stack's alert rules don't all set `service` consistently — the
+  control-plane false-positives noted earlier, for instance, only carry
+  `job`). Missing labels resolve to `"unknown"`, never an exception — a
+  report worth saving should never be dropped over a label a particular
+  alert rule happens not to set.
+- `status` — `"pending"` on creation, flipped to `"resolved"` (or back)
+  through the API below. This is the one field that's genuinely mutable,
+  which is exactly why it doesn't live in the JSON files.
+- `content_md` — the report rendered as a self-contained Markdown document
+  (`report.py::render_report_markdown`) for the client's issue detail page.
+
+Every investigation writes to *both* the JSON file (via `save_report`) and
+this store (via `ReportsStore.insert`) — they're kept in sync by both
+being written from the same place in `webhook_server.py`'s worker, not by
+one being derived from the other later.
+
+### The `/reports*` endpoints
+
+| Method  | Path                | What it does                                              |
+|---------|---------------------|------------------------------------------------------------|
+| `GET`   | `/reports`          | list, newest first; optional `?status=pending\|resolved`  |
+| `GET`   | `/reports/{id}`     | full detail, including `content_md`; `404` if unknown       |
+| `PATCH` | `/reports/{id}`     | body `{"status": "pending"\|"resolved"}`; `404` if unknown |
+| `GET`   | `/reports/stream`   | Server-Sent Events: `report_created`, `report_updated`      |
+
+The list endpoint deliberately returns a lighter shape (`ReportSummary`)
+than the detail endpoint (`ReportDetail`) — see `reports_api.py` — so a
+list of dozens of incidents isn't dragging full Markdown reports over the
+wire for rows the user hasn't opened yet.
+
+### Live updates: `report_events.py`
+
+Polling `/reports` on an interval would work, but `report_events.py`'s
+`ReportEventBroadcaster` gives the client a push-based alternative for
+free: an in-process pub/sub (one `asyncio.Queue` per connected client) that
+the worker publishes to after inserting a new report, and that the `PATCH`
+handler publishes to after a status change. `/reports/stream` subscribes a
+client to it and streams events as they happen, with a comment-line
+keep-alive every 15s so the connection doesn't look dead to a proxy or the
+browser. A full subscriber queue drops its own oldest pending event rather
+than blocking the publisher — an investigation finishing must never wait
+on a slow browser tab.
+
+### CORS and auth for the client-facing endpoints
+
+Two new settings, independent of `WEBHOOK_SHARED_SECRET` (which stays
+Alertmanager's alone, since it's a different caller with a different
+lifecycle):
+
+```bash
+# .env
+CLIENT_ALLOWED_ORIGINS=http://localhost:5173   # empty = allow any origin
+CLIENT_API_TOKEN=                              # empty = no auth check
+```
+
+When `CLIENT_API_TOKEN` is set, `require_client_token` accepts it two
+ways: as `Authorization: Bearer <token>` for ordinary REST calls, or as a
+`?token=` query parameter for `/reports/stream` specifically — browsers'
+`EventSource` cannot set custom request headers, so the query parameter is
+the only way that one connection can authenticate at all.
 
 ## Logging
 
@@ -552,16 +672,18 @@ wrong. `AgentLoop` itself now logs:
   `ToolRegistry` — the agent will start using it without any changes to
   `AgentLoop`.
 - **Slack interface**: the alert intake and investigation are now handled
-  by `webhook_server.py`, and every finished investigation is saved as a
-  structured JSON report under `REPORT_OUTPUT_DIR` (see "Saving diagnosis
-  reports to disk") — `title` and `problem` alone are already close to a
+  by `webhook_server.py`, and every finished investigation is saved both as
+  a JSON file under `REPORT_OUTPUT_DIR` and as a row in `reports_store.py`
+  (see "Saving diagnosis reports to disk" and "Serving reports to the
+  client") — `title`/`summary`/`problem` alone are already close to a
   postable Slack message, with `error_sources`/`remediations` as bullet
   lists. Posting that to Slack (formatting, threading per incident, etc.)
-  is the next piece for this component; the cleanest hook is probably
-  reading the freshly-written JSON file (or receiving its path/content via
-  a callback passed into the worker) rather than re-deriving the report,
-  so `webhook_server.py` stays about running investigations, not about
-  chat formatting.
+  is the next piece for this component. Two viable hooks now exist, pick
+  whichever fits better: subscribe to `GET /reports/stream` (the same SSE
+  feed the web client uses) and post on every `report_created` event, or
+  read the freshly-written JSON file/receive a callback from the worker as
+  originally sketched. Either way, `webhook_server.py` stays about running
+  investigations and serving reports, not about chat formatting.
 - **Infrastructure component**: the only environment dependency for the MCP
   path is `MCP_GRAFANA_URL` — if the address/port changes (e.g. moving from
   local port forwarding to a Service inside the cluster), updating it is a

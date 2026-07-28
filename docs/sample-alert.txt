@@ -1,0 +1,23 @@
+curl -X POST http://localhost:8090/alerts/webhook \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer a_12345!" \
+  -d '{
+    "version": "4",
+    "status": "firing",
+    "groupLabels": {"alertname": "HighCheckoutErrorRate", "namespace": "otel-demo"},
+    "alerts": [
+      {
+        "status": "firing",
+        "labels": {
+          "alertname": "HighCheckoutErrorRate",
+          "namespace": "otel-demo",
+          "pod": "checkout-798c8f47cd-24lsr",
+          "severity": "critical"
+        },
+        "annotations": {
+          "summary": "Checkout error rate above 5% for the last 5 minutes"
+        },
+        "startsAt": "2026-07-18T14:00:00Z"
+      }
+    ]
+  }'

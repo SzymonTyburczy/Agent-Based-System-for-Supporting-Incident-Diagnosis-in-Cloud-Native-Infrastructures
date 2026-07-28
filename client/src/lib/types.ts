@@ -12,6 +12,12 @@ export interface Issue {
   content: string;
 }
 
+/** Issue shape without the full Markdown report — what list views (the
+ * issues grid, dashboard counts) actually need, and all the agent's
+ * `GET /reports` list endpoint returns (the full `content` only comes
+ * back from `GET /reports/{id}`). */
+export type IssueSummary = Omit<Issue, "content">;
+
 /**
  * Payload sent to the backend after processing a document.
  * Field names are intentionally Polish per the agreed contract: data / autor / tresc

@@ -9,6 +9,7 @@ orchestration (actually calling tools) stays a thin wrapper in main.py.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 SYSTEM_PROMPT_TEMPLATE = (
@@ -155,3 +156,59 @@ def build_incident_description_from_webhook(payload: dict) -> str | None:
         lines.append(f"- {name} (since {starts_at}): {summary} [{other_labels}]")
 
     return INCIDENT_FROM_ALERTS_TEMPLATE.format(alerts="\n".join(lines))
+
+
+_UNKNOWN_LABEL = "unknown"
+
+# Checked in order against groupLabels first, then the first firing alert's
+# own labels — "service" is the ideal, explicit label, but this stack's
+# alert rules don't all set it consistently, so we fall back through the
+# labels that most often stand in for it (see the false-positive control-
+# plane alerts noted in the thesis summary, which only carry `job`).
+_SERVICE_LABEL_CANDIDATES = ("service", "job", "app", "app_kubernetes_io_name", "namespace")
+
+
+@dataclass
+class IncidentMeta:
+    """Service/severity extracted from an Alertmanager webhook payload's own
+    labels, carried alongside the free-text incident description so the
+    reports store can tag a finished investigation without asking the LLM
+    to restate labels it was already handed (and might not transcribe
+    faithfully into its structured output).
+    """
+
+    service: str
+    severity: str
+
+
+def extract_incident_meta_from_webhook(payload: dict) -> IncidentMeta:
+    """Best-effort extraction, not validation: call this only on a payload
+    `build_incident_description_from_webhook` already accepted (status
+    "firing" with at least one firing alert). Missing labels fall back to
+    "unknown" rather than raising — a report worth saving shouldn't be
+    dropped for a label a particular alert rule happens not to set.
+    """
+    if not isinstance(payload, dict):
+        return IncidentMeta(service=_UNKNOWN_LABEL, severity=_UNKNOWN_LABEL)
+
+    group_labels = payload.get("groupLabels")
+    group_labels = group_labels if isinstance(group_labels, dict) else {}
+
+    alerts = payload.get("alerts")
+    first_alert_labels: dict = {}
+    if isinstance(alerts, list):
+        for alert in alerts:
+            if isinstance(alert, dict) and isinstance(alert.get("labels"), dict):
+                first_alert_labels = alert["labels"]
+                break
+
+    severity = group_labels.get("severity") or first_alert_labels.get("severity") or _UNKNOWN_LABEL
+
+    service = _UNKNOWN_LABEL
+    for key in _SERVICE_LABEL_CANDIDATES:
+        value = group_labels.get(key) or first_alert_labels.get(key)
+        if value:
+            service = value
+            break
+
+    return IncidentMeta(service=service, severity=severity)

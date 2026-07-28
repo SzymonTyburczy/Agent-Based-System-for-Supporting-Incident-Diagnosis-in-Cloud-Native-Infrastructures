@@ -66,10 +66,31 @@ class Settings(BaseSettings):
     # reachable outside localhost).
     webhook_shared_secret: str | None = None
 
+    # If set, the client-facing /reports* endpoints require
+    # "Authorization: Bearer <this value>". Separate from
+    # webhook_shared_secret on purpose — Alertmanager and the web panel
+    # are different callers with different lifecycles; rotating one
+    # shouldn't require touching the other. None/empty = no auth check
+    # (fine for local dev, never for anything reachable outside
+    # localhost).
+    client_api_token: str | None = None
+
+    # Comma-separated list of origins allowed to call the client-facing
+    # /reports* endpoints (CORS). Empty = allow any origin — acceptable
+    # for a local dev tool talking to a local agent, but should be
+    # narrowed down (e.g. "http://localhost:5173") once this leaves a
+    # single developer's machine.
+    client_allowed_origins: str = ""
+
     # Where finished investigations are saved as JSON files (see
     # agent_core/report.py). Relative paths are resolved against the
     # current working directory the process was started from.
     report_output_dir: str = "./reports"
+
+    # Mutable-status counterpart to report_output_dir's immutable JSON
+    # files (see agent_core/reports_store.py) — this is what the client
+    # web panel will read from/update once its API layer exists.
+    reports_db_path: str = "./reports/reports.db"
 
     # Allowlist of namespaces for the kubectl tools (empty = no restriction)
     kubectl_allowed_namespaces: str = ""
@@ -85,6 +106,11 @@ class Settings(BaseSettings):
         return {
             name.strip() for name in self.mcp_grafana_tool_allowlist.split(",") if name.strip()
         }
+
+    def client_origins(self) -> list[str]:
+        if not self.client_allowed_origins.strip():
+            return ["*"]
+        return [origin.strip() for origin in self.client_allowed_origins.split(",") if origin.strip()]
 
 
 def build_provider(settings: Settings) -> LLMProvider:

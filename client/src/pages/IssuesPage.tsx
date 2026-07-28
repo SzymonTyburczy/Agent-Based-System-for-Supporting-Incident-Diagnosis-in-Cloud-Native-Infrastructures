@@ -1,18 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { CircleDot, Clock, ServerCog } from "lucide-react";
+import { AlertTriangle, CircleDot, Clock, ServerCog } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityBadge } from "../components/SeverityBadge";
-import { mockIssues } from "../data/mockIssues";
+import { useReports } from "../hooks/useReports";
 import { formatIssueDate } from "../lib/format";
-import type { Issue, IssueStatus } from "../lib/types";
+import type { IssueStatus, IssueSummary } from "../lib/types";
 
-const grouped = {
-  pending: mockIssues.filter((i) => i.status === "pending"),
-  resolved: mockIssues.filter((i) => i.status === "resolved"),
-};
-
-function IssueCard({ issue }: { issue: Issue }) {
+function IssueCard({ issue }: { issue: IssueSummary }) {
   return (
     <Link
       to={`/issues/${issue.id}`}
@@ -43,7 +38,13 @@ function IssueCard({ issue }: { issue: Issue }) {
 }
 
 export function IssuesPage() {
+  const { issues, loading, error } = useReports();
   const [tab, setTab] = useState<IssueStatus>("pending");
+
+  const grouped = {
+    pending: issues.filter((i) => i.status === "pending"),
+    resolved: issues.filter((i) => i.status === "resolved"),
+  };
 
   const tabs: { key: IssueStatus; label: string; count: number }[] = [
     { key: "pending", label: "Pending", count: grouped.pending.length },
@@ -56,7 +57,7 @@ export function IssuesPage() {
     <div>
       <PageHeader
         title="Issues"
-        description="Overview of incidents split into pending and resolved. Preview view — integration with the diagnostic agent will come in later iterations."
+        description="Overview of incidents split into pending and resolved, synced live from the diagnostic agent."
       />
 
       <div className="mb-5 inline-flex rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
@@ -85,7 +86,17 @@ export function IssuesPage() {
         ))}
       </div>
 
-      {items.length === 0 ? (
+      {error ? (
+        <div className="card flex flex-col items-center gap-2 border-[var(--color-danger)]/40 py-16 text-center">
+          <AlertTriangle className="h-5 w-5 text-[var(--color-danger)]" />
+          <p className="text-sm text-[var(--color-danger)]">Couldn't reach the diagnostic agent.</p>
+          <p className="text-xs text-[var(--color-muted)]">{error}</p>
+        </div>
+      ) : loading ? (
+        <div className="card flex flex-col items-center justify-center border-dashed py-16 text-center">
+          <p className="text-sm text-[var(--color-muted)]">Loading issues…</p>
+        </div>
+      ) : items.length === 0 ? (
         <div className="card flex flex-col items-center justify-center border-dashed py-16 text-center">
           <p className="text-sm text-[var(--color-muted)]">No issues in this category.</p>
         </div>

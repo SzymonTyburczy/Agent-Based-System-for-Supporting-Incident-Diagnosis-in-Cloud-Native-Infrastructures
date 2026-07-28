@@ -28,6 +28,8 @@ REPORT_SYSTEM_PROMPT = (
     "You will be given a diagnostic report written in free text. Convert it "
     "into a JSON object with EXACTLY these keys, and nothing else:\n"
     '- "title": a short, one-line summary of the incident (max ~10 words).\n'
+    '- "summary": one sentence (max ~25 words) a person could read in a '
+    "list view to know what happened, without opening the full report.\n"
     '- "error_sources": a list of strings identifying where the evidence '
     "for the problem was found (e.g. specific pods, log queries, metrics, "
     "dashboards).\n"
@@ -36,9 +38,14 @@ REPORT_SYSTEM_PROMPT = (
     "step.\n"
     "Respond with ONLY the JSON object — no markdown code fences, no "
     "commentary before or after it. If the original report says the cause "
-    "is uncertain, reflect that honestly in \"problem\" rather than "
-    "inventing a confident answer."
+    "is uncertain, reflect that honestly in \"problem\" and \"summary\" "
+    "rather than inventing a confident answer."
 )
+
+# Fallback when the model omits "summary" (or structuring fails outright,
+# see parse_report_json): truncated so a list view never has to render an
+# unbounded paragraph in a spot sized for one sentence.
+_SUMMARY_FALLBACK_MAX_CHARS = 160
 
 
 @dataclass
@@ -48,10 +55,12 @@ class IncidentReport:
     problem: str
     remediations: list[str]
     raw_diagnosis: str
+    summary: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "title": self.title,
+            "summary": self.summary,
             "error_sources": self.error_sources,
             "problem": self.problem,
             "remediations": self.remediations,
@@ -101,13 +110,29 @@ def parse_report_json(raw_text: str | None, fallback_diagnosis: str) -> Incident
     problem = data.get("problem")
     problem = str(problem).strip() if isinstance(problem, str) and problem.strip() else fallback_diagnosis
 
+    summary = data.get("summary")
+    summary = str(summary).strip() if isinstance(summary, str) and summary.strip() else _fallback_summary(problem)
+
     return IncidentReport(
         title=title,
+        summary=summary,
         error_sources=_as_string_list(data.get("error_sources")),
         problem=problem,
         remediations=_as_string_list(data.get("remediations")),
         raw_diagnosis=fallback_diagnosis,
     )
+
+
+def _fallback_summary(problem: str) -> str:
+    """Used when the model omits "summary" or structuring fails outright:
+    derives a list-view-sized sentence from `problem` instead of leaving
+    the field empty. Truncates on a word boundary where possible.
+    """
+    text = problem.strip()
+    if len(text) <= _SUMMARY_FALLBACK_MAX_CHARS:
+        return text
+    truncated = text[:_SUMMARY_FALLBACK_MAX_CHARS].rsplit(" ", 1)[0]
+    return f"{truncated}…"
 
 
 def save_report(
@@ -132,6 +157,27 @@ def save_report(
     payload = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), **report.to_dict()}
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+def render_report_markdown(report: IncidentReport) -> str:
+    """Renders an `IncidentReport` as a self-contained Markdown document —
+    the `content` shown on the client's issue detail page. Pure and
+    trivially testable: no I/O, just string assembly from fields that are
+    already validated/defaulted by `parse_report_json`.
+    """
+    sections = [f"# {report.title}", "", report.summary, "", "## Problem", "", report.problem]
+
+    if report.error_sources:
+        sections += ["", "## Error sources", ""]
+        sections += [f"- {source}" for source in report.error_sources]
+
+    if report.remediations:
+        sections += ["", "## Suggested remediations", ""]
+        sections += [f"- {step}" for step in report.remediations]
+
+    sections += ["", "## Raw diagnosis", "", report.raw_diagnosis]
+
+    return "\n".join(sections).strip() + "\n"
 
 
 async def generate_report(provider: LLMProvider, diagnosis_text: str) -> IncidentReport:

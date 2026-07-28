@@ -5,7 +5,7 @@ The objective of this engineering thesis is to design and implement a prototype 
 
 ## Key Features
 - **Telemetry Data Integration**: Utilizes metrics, logs, and system events from various monitoring sources.
-- **Agent-Based Architecture**: Operates within a cloud-native environment to continuously monitor and analyze the state of the infrastructure.
+- **Agent-Based Architecture**: Reacts to alerts from the monitoring stack and analyzes the current state of the infrastructure to diagnose the underlying incident.
 - **Retrieval-Augmented Generation (RAG)**: Retrieves domain-specific technical knowledge from documentation to assist in the diagnosis process.
 - **Automated Diagnostic Reports**: Generates structured reports containing potential root causes of incidents and recommended remediation actions.
 - **Decision Support System**: The level of system autonomy is limited to decision support only; the system will not execute remediation actions automatically.
@@ -17,6 +17,7 @@ The objective of this engineering thesis is to design and implement a prototype 
 4. **Report Generation**: Outputs a comprehensive diagnostic report outlining what went wrong and how to fix it.
 
 ## Repository Layout
+- **`agent-core/`** — the diagnostic agent (Python/FastAPI): receives alerts, investigates using LLM-driven tool calls (kubectl, Grafana/LGTM via MCP), and produces the structured incident reports the client displays. Setup and details: [agent-core/README.md](agent-core/README.md).
 - **`client/`** — IDAR web panel (React + TypeScript + Vite): document ingestion for the RAG knowledge base, incident views with an AI chat panel. Setup and details: [client/README.md](client/README.md).
 - **`example-infrastructure/`** — demo cloud-native deployment with a configured observability stack.
 
@@ -29,3 +30,7 @@ This project is developed as an engineering thesis by a team of four:
 - Seweryn Tasior
 - Filip Mokrzycki
 - Wojciech Pawlina
+
+> **Want to run the whole thing end-to-end?** See [`RUNNING.md`](docs/RUNNING.md) —
+> covers startup order, required environment variables for both `agent-core`
+> and `client`, and a smoke test that doesn't need a live cluster.
