@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-07-19T17:15:47Z",
+  "title": "High CPU usage in load-generator pod triggers alert",
+  "error_sources": [
+    "pod status reports",
+    "container_cpu_usage_seconds_total CPU metrics (1 hour rate)",
+    "pod restart events (OOMKilled exit code 137)"
+  ],
+  "problem": "The container-cpu-high-rate alert is caused by the load-generator pod in the otel-demo namespace consuming excessively high CPU resources, peaking at around 10 cores. This pod has also experienced restarts due to OOMKilled events, indicating resource exhaustion. Other pods in the namespace do not exhibit unusual CPU usage or restarts. Memory usage and logs were not analyzed, so the full cause of resource exhaustion is not entirely certain.",
+  "remediations": [
+    "Review and adjust CPU resource requests and limits for the load-generator pod to better match its workload and prevent CPU contention or throttling.",
+    "Investigate the load-generator workload for optimization or consider scaling horizontally if the high CPU usage is justified.",
+    "Monitor for OOMKilled events and adjust memory resource limits as needed.",
+    "Analyze load-generator pod logs to identify application-level issues contributing to high CPU usage.",
+    "Gather memory usage and other resource metrics to better understand causes of OOMKilled terminations."
+  ],
+  "raw_diagnosis": "Diagnosis of alert \"container-cpu-high-rate\" firing in namespace \"otel-demo\":\n\n1. Pod Status:\n- All pods in \"otel-demo\" namespace are Running without unhealthy conditions. \n- The \"load-generator-5765f7695c-tbstm\" pod shows 4 restarts, with the previous termination reason being OOMKilled (exit code 137). This likely indicates excessive CPU or memory resource usage causing pod eviction.\n- Frontend pods have no restarts or warning events.\n\n2. CPU Usage Metrics (container_cpu_usage_seconds_total rate over last 1 hour):\n- The load-generator pod shows very high CPU usage rates, spiking above 9 CPU cores and at times reaching around 10 CPU cores.\n- Other pods including frontend, checkout, currency, and others consume far less CPU, typically under 0.1 to 0.05 cores.\n- The load-generator's CPU usage pattern aligns with the alert for high container CPU rate.\n\n3. Conclusion:\nThe \"container-cpu-high-rate\" alert is triggered due to very high and sustained CPU usage by the \"load-generator\" pod in the \"otel-demo\" namespace, which also experienced past OOMKill restarts consistent with resource exhaustion.\n\nSuggested Remediation:\n- Review and adjust CPU resource requests and limits for the load-generator pod to better fit its workload and avoid CPU contention or throttling.\n- Investigate load-generator's workload for optimization opportunities or consider scaling out if the high CPU usage is legitimate.\n- Monitor for OOMKilled events and adjust memory resource limits accordingly.\n- No indication of issues with frontend pods as their CPU usage is normal and stable.\n\nRemaining Uncertainty:\n- Memory usage metrics and other resource consumption for the load-generator pod were not checked; these could provide further insights into OOMKill causes.\n- No logs were analyzed here; checking load-generator logs might reveal application-level causes for high CPU usage.\n\nThis analysis primarily attributes the alert to the load-generator pod's high CPU consumption triggering the container-cpu-high-rate alert."
+}

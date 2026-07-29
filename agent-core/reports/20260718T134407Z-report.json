@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-07-18T13:44:07Z",
+  "title": "etcd cluster lacks sufficient members for quorum",
+  "error_sources": [
+    "Alertmanager alert 'etcdInsufficientMembers'",
+    "Prometheus datasource 'prom-stack-kube-prometheus-prometheus' (missing/inaccessible)",
+    "Accessible datasources: Alertmanager, Loki, default Prometheus, Tempo",
+    "Namespace 'kube-system' restricted for kubectl pod inspection"
+  ],
+  "problem": "The etcd cluster in the kube-system namespace does not have enough members to form a quorum, which is critical for cluster operation. Due to namespace access restrictions and missing or inaccessible Prometheus datasource, direct verification of etcd member pod status and metrics is not possible. The alert reliably indicates member insufficiency but the exact cause or affected members cannot be confirmed with current privileges.",
+  "remediations": [
+    "Obtain privileged access to verify etcd cluster member status and quorum directly within the cluster.",
+    "Inspect etcd pod status and logs in the kube-system namespace to identify failures.",
+    "Confirm Prometheus datasource configurations related to etcd monitoring are correct and accessible.",
+    "Investigate recent etcd member failures, network issues, or resource constraints causing member loss."
+  ],
+  "raw_diagnosis": "The namespace 'kube-system' is not on the allowlist for kubectl commands, so pod inspection there is disallowed.\n\nThe specified Prometheus datasource 'prom-stack-kube-prometheus-prometheus' mentioned in the alert labels appears not to exist or is inaccessible in the current environment, so I could not query etcd-related metrics from it.\n\nWhat is accessible includes:\n- Several datasources such as Alertmanager (uid: alertmanager), Loki (uid: P8E80F9AEF21F6940), a default Prometheus (uid: prometheus), and Tempo.\n- The Alertmanager datasource where the alert was reported from.\n\nThe alert \"etcdInsufficientMembers\" signals that the etcd cluster in the kube-system namespace does not have enough members to form a quorum, which is critical for cluster operation. This is usually caused by the failure or unavailability of one or more etcd members.\n\nDue to restrictions on namespace access and datasource availability, I cannot directly verify pod status for etcd members or query etcd metrics in this environment.\n\nSuggested next steps:\n- Verify etcd cluster member status and quorum from within the cluster using appropriate privileged access (outside current read-only restrictions).\n- Check etcd pod status and logs in the kube-system namespace where they normally run.\n- Confirm Prometheus datasources and queries configurations related to etcd cluster monitoring are set correctly and accessible.\n- Investigate possible recent etcd member failures, network partitions, or resource issues causing member loss.\n\nThere is remaining uncertainty due to access restrictions disallowing direct inspection of etcd pods and metrics. The alert itself is reliable in indicating etcd cluster has insufficient members for quorum."
+}

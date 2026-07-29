@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-07-19T17:12:34Z",
+  "title": "High CPU Usage and OOMKills in 'load-generator' Pod",
+  "error_sources": [
+    "Pod status for load-generator-5765f7695c-tbstm",
+    "Prometheus CPU usage metrics",
+    "container-cpu-high-rate alert firing"
+  ],
+  "problem": "The 'load-generator' pod in the otel-demo namespace is consuming abnormally high CPU resources, peaking near 9.7 cores, well above other pods, causing the container-cpu-high-rate alert. Additionally, the pod's container has restarted multiple times due to OOMKilled, indicating resource pressure and instability tied to this high CPU consumption.",
+  "remediations": [
+    "Investigate the workload executed by the 'load-generator' service to determine the cause of excessive CPU usage.",
+    "Consider scaling the pod or adjusting resource limits and requests to manage CPU utilization.",
+    "Review logs of the 'load-generator' pod for any anomalies or error patterns related to CPU spikes.",
+    "Monitor CPU usage after applying workload adjustments to ensure normalization and alert resolution."
+  ],
+  "raw_diagnosis": "The alert \"container-cpu-high-rate\" is firing due to high CPU usage by a container in the otel-demo namespace.\n\nFindings:\n- Pod status for the \"load-generator-5765f7695c-tbstm\" pod shows it is Running but its container \"load-generator\" has restarted 4 times previously due to OOMKilled (exit code 137).\n- From Prometheus CPU usage metrics, the \"load-generator\" pod is consuming a very high CPU rate peaking around 9.7 cores, which is significantly higher than other pods in the otel-demo namespace.\n- Other pods show normal CPU usage rates, well below the \"load-generator\" pod.\n- No unhealthy conditions or warning events currently on the pod (\"load-generator\").\n- High CPU usage by \"load-generator\" is consistent with the alert firing for high container CPU rate.\n\nProbable Root Cause:\nThe \"load-generator\" pod/container in the otel-demo namespace is consuming abnormally high CPU resources. This high CPU consumption triggered the container-cpu-high-rate alert. The pod also experienced OOMKills previously, indicating resource pressure.\n\nSuggested Remediation Steps:\n1. Investigate the workload run by the \"load-generator\" service to understand why it is using such a high CPU. It might be a load-test or CPU-intensive job.\n2. Consider scaling or resource limits/requests adjustments for this pod to prevent over-utilization impacting other services.\n3. Review logs of the \"load-generator\" pod for any anomalies or error patterns that may indicate why CPU usage spikes.\n4. Monitor once the workload adjustments or fixes are applied to ensure CPU usage returns to normal and alert resolves.\n\nThere is no indication of problem in other application pods. The high CPU usage and previous OOMKills in the \"load-generator\" pod/container likely explain the alert."
+}

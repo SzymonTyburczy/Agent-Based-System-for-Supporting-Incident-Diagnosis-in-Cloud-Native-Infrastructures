@@ -1,0 +1,30 @@
+[project]
+name = "agent-core"
+version = "0.1.0"
+description = "Szkielet agenta AI do diagnostyki incydentów cloud-native (LF Robotics / praca inżynierska)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic-settings>=2.4",
+    "openai>=1.40",
+    "anthropic>=0.34",
+    "mcp>=1.2",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agent_core*"]

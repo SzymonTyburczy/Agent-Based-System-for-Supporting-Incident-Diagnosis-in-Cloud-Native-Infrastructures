@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-07-18T13:43:55Z",
+  "title": "kube-scheduler unreachable in kube-system namespace",
+  "error_sources": [
+    "'kube-system' namespace access restrictions",
+    "Prometheus and Loki datasource UID not found or inaccessible",
+    "Alert firing related to kube-scheduler pod"
+  ],
+  "problem": "Access to the 'kube-system' namespace is restricted and the specified Prometheus and Loki datasources are not accessible, preventing direct diagnostics of the kube-scheduler pod. This suggests the kube-scheduler instance is currently unreachable or down, potentially due to pod crash, network issues, or process hang, but exact cause cannot be determined without further access.",
+  "remediations": [
+    "Request cluster admin access to view logs and metrics for the 'kube-system/kube-scheduler' pod.",
+    "Have cluster admins confirm the kube-scheduler pod status using kubectl.",
+    "Investigate potential node networking or resource pressure issues affecting kube-scheduler reachability.",
+    "Review kube-scheduler container logs for errors or crashes at the time the alert fired."
+  ],
+  "raw_diagnosis": "The cluster restricts access to the 'kube-system' namespace (only 'otel-demo' is allowed), so direct pod diagnostics there are unavailable.\n\nAlso, the Prometheus and Loki datasource UID 'observability/prom-stack-kube-prometheus-prometheus' specified in the alert labels is not found or not accessible, so I cannot query related metrics or logs from those datasources.\n\nThis limits direct investigation of the kube-scheduler pod status, metrics, and logs that correspond to the firing alert.\n\nGiven these access restrictions, the probable root cause is that the kube-scheduler instance running in the 'kube-system' namespace is currently unreachable or down, causing the alert to fire. This usually happens due to pod crash, network issues, or process hang.\n\nSuggested remediation steps:\n- Check with cluster admins to get access or logs/metrics for 'kube-system/kube-scheduler' pod for deeper diagnostics.\n- Confirm the kube-scheduler pod status with cluster admin kubectl access.\n- Investigate node networking or resource pressure problems that could make kube-scheduler unreachable.\n- Examine kube-scheduler container logs for errors or crashes at the corresponding alert time.\n\nWithout the ability to access the kube-system namespace or the Prometheus/Loki datasource specified, precise diagnosis is limited and requires elevated privileges or admin support."
+}

@@ -175,3 +175,22 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
+
+### Node / Frontend (client/) ###
+node_modules/
+dist-ssr/
+*.local
+
+### Project-specific: generated runtime data (agent-core/) ###
+# Incident reports: immutable JSON artifacts + mutable SQLite status
+# store (see agent_core/report.py, agent_core/reports_store.py). This is
+# runtime output tied to your cluster, not source — never commit it.
+/agent-core/reports/
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Editors ###
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-07-19T17:00:01Z",
+  "title": "High CPU and OOMKilled restarts in load-generator pod",
+  "error_sources": [
+    "Pod load-generator-5765f7695c-tbstm in otel-demo namespace",
+    "Container CPU high rate alert",
+    "Pod restart and back-off events",
+    "Monitoring datasource query failures"
+  ],
+  "problem": "The load-generator pod is experiencing high CPU consumption leading to memory pressure, causing OOMKilled events and multiple container restarts. However, exact CPU usage patterns and log details cannot be confirmed due to failures in querying monitoring datasources, leaving some uncertainty about the full root cause and whether broader cluster or node issues contribute.",
+  "remediations": [
+    "Review and adjust CPU and memory requests and limits for the load-generator container to prevent OOM kills and throttling.",
+    "Investigate workload or load-generation patterns to identify inefficiencies or spikes causing high resource consumption.",
+    "Restore and verify monitoring datasource integrations (e.g., Prometheus, Loki) for live diagnostics with metrics and logs.",
+    "Directly access pod logs on the host node to understand triggers of high CPU usage.",
+    "Further diagnose cluster and node health to rule out underlying infrastructure issues."
+  ],
+  "raw_diagnosis": "The pod \"load-generator-5765f7695c-tbstm\" in namespace \"otel-demo\" is the source of the container CPU high rate alert. The pod is running and ready but had 3 recent restarts due to an OOMKilled condition (out-of-memory kill), indicating it may be under resource stress. There were also recent back-off restart events for this container.\n\nUnfortunately, attempts to query logs or metrics from the configured monitoring datasources failed, limiting ability to confirm real-time CPU utilization or inspect recent container logs for deeper insight.\n\nProbable root cause:\n- The container is consuming high CPU causing memory pressure leading to OOM kills and container restarts/backoffs.\n- The high resource consumption aligns with the firing \"container-cpu-high-rate\" alert.\n\nSuggested remediation steps:\n- Review and adjust resource limits (CPU & memory) and requests for the load-generator container to prevent OOM kills and throttling.\n- Investigate the workload or load-generation behavior for possible inefficiencies or spikes.\n- Ensure monitoring datasource integrations (Prometheus, Loki) are functional to allow live diagnostics with metrics and logs.\n- Observe pod logs directly on the node hosting the container if possible, to understand what triggers the high CPU usage.\n\nRemaining uncertainty:\n- Exact CPU usage pattern and logs details could not be confirmed due to datasource query failures.\n- It is unknown if any underlying cluster or node-level issues contribute to this high CPU scenario.\n\nFurther investigation should include restoring monitoring datasource connectivity and fetching precise CPU metrics and application logs from the pod to confirm and refine root cause."
+}

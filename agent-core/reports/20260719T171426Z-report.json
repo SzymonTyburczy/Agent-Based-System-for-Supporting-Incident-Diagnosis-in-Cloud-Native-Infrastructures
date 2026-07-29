@@ -1,0 +1,22 @@
+{
+  "generated_at": "2026-07-19T17:14:26Z",
+  "title": "High CPU Usage Alert with Missing Metrics in otel-demo Namespace",
+  "error_sources": [
+    "Alert 'container-cpu-high-rate'",
+    "Pod status checks in otel-demo namespace",
+    "Prometheus container_cpu_user_seconds_total metric data",
+    "Load-generator pod restart history",
+    "Prometheus scrape configuration",
+    "Alert rule definitions"
+  ],
+  "problem": "The alert for high container CPU usage in the otel-demo namespace is firing despite all pods being healthy and running. However, the critical CPU usage metric container_cpu_user_seconds_total is missing from Prometheus for the recent period, indicating either a collection, scraping, or configuration issue. This lack of telemetry obstructs a definitive analysis of CPU usage or identification of which containers caused the alert. The load-generator pod had prior OOMKilled restarts but is currently stable, adding uncertainty around the CPU spikes. The root cause remains unclear until metric visibility is restored and cross-checked with logs and alternative metrics.",
+  "remediations": [
+    "Investigate why container CPU usage metrics are missing in Prometheus for otel-demo namespace.",
+    "Validate and fix Prometheus scrape configurations and metric collection for container CPU usage.",
+    "Check alternative CPU-related metrics in Prometheus for signs of high usage.",
+    "Review historical logs and data around alert times for evidence of CPU or performance issues.",
+    "Analyze the load-generator pod’s potential contribution to CPU spikes due to past OOMKilled restarts.",
+    "Verify the alert rule targets the correct and available metrics."
+  ],
+  "raw_diagnosis": "Diagnosis report:\n\nProbable root cause:\n- The alert \"container-cpu-high-rate\" firing indicates high CPU usage rate in containers within the otel-demo namespace.\n- All pods in the otel-demo namespace are in Running state and Ready, with no recent warning events or unhealthy conditions reported.\n- The one exception related to restarts was the load-generator pod which had previous OOMKilled restarts but currently is healthy.\n- No data for the container_cpu_user_seconds_total metric could be found over a recent one-hour range in Prometheus, which is unusual for this alert type. This could mean the metric is not collected or named differently in this environment, or there is a scrape or config issue.\n\nSuggested next steps / remediation:\n- Investigate why the expected container CPU usage metrics (e.g., container_cpu_user_seconds_total) are not available in Prometheus for the otel-demo namespace.\n- Validate the Prometheus scrape configuration and check if metric collection for container CPU usage is enabled and functioning.\n- Explore alternative container CPU-related metrics available in Prometheus and check their values for spikes.\n- Review historical data and logs around the alert firing timestamp for any additional signs of high CPU or performance issues.\n- Check if the load-generator, which experienced OOMKilled events recently, is contributing to CPU spikes.\n- Cross-check the alert rule definition to confirm it targets the correct metrics.\n\nRemaining uncertainty:\n- Lack of container CPU usage metrics in Prometheus leaves uncertainty on the actual CPU usage state.\n- No log data reviewed yet from individual pods to verify CPU-intensive operations or errors.\n- Not confirmed which containers exactly triggered the alert CPU high rate condition.\n- Could not verify if the alert was due to transient spikes or ongoing sustained issues.\n\nOverall, the alert indicates a valid concern about CPU usage but current telemetry gaps prevent a full root-cause determination. The key priority is fixing metric visibility for container CPU usage to validate and monitor the situation accurately."
+}

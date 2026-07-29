@@ -1,22 +1,23 @@
 import { Link } from "react-router-dom";
 import { CheckCircle2, Clock, FileText, ShieldAlert } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
-import { mockIssues } from "../data/mockIssues";
+import { useReports } from "../hooks/useReports";
 
 export function DashboardPage() {
-  const pending = mockIssues.filter((i) => i.status === "pending").length;
-  const resolved = mockIssues.filter((i) => i.status === "resolved").length;
+  const { issues, loading } = useReports();
+  const pending = issues.filter((i) => i.status === "pending").length;
+  const resolved = issues.filter((i) => i.status === "resolved").length;
 
   const stats = [
     {
       label: "Pending issues",
-      value: pending,
+      value: loading ? "—" : pending,
       icon: Clock,
       color: "text-[var(--color-warning)]",
     },
     {
       label: "Resolved issues",
-      value: resolved,
+      value: loading ? "—" : resolved,
       icon: CheckCircle2,
       color: "text-[var(--color-success)]",
     },

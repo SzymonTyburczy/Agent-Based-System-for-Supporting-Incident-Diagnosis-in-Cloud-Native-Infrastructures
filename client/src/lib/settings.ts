@@ -9,6 +9,14 @@ export function getGeminiApiKey(): string {
   return (import.meta.env.VITE_GEMINI_API_KEY ?? "").trim();
 }
 
+export function getAgentApiUrl(): string {
+  return (import.meta.env.VITE_AGENT_API_URL ?? "").trim().replace(/\/+$/, "");
+}
+
+export function getAgentApiToken(): string {
+  return (import.meta.env.VITE_AGENT_API_TOKEN ?? "").trim();
+}
+
 export function getGeminiModel(): string {
   return localStorage.getItem(STORAGE_KEYS.geminiModel) || DEFAULT_GEMINI_MODEL;
 }
