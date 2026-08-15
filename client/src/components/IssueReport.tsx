@@ -82,7 +82,7 @@ export function ErrorSourcesSection({ items }: { items: string[] }) {
           // within one report.
           <li
             key={index}
-            className="flex items-start gap-2.5 rounded-lg bg-[var(--color-bg)] px-3 py-2 text-sm break-words"
+            className="flex items-start gap-2.5 rounded-lg bg-[var(--color-bg)] px-3 py-2 text-sm [overflow-wrap:anywhere]"
           >
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-brand)]" />
             {item}
@@ -100,7 +100,7 @@ export function RemediationsSection({ items }: { items: string[] }) {
           Markdown blob they were bullets indistinguishable from the sources. */}
       <ol className="space-y-2.5">
         {items.map((item, index) => (
-          <li key={index} className="flex items-start gap-2.5 text-sm break-words">
+          <li key={index} className="flex items-start gap-2.5 text-sm [overflow-wrap:anywhere]">
             <span className="mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-brand)]/15 text-[11px] font-semibold text-[var(--color-brand)]">
               {index + 1}
             </span>

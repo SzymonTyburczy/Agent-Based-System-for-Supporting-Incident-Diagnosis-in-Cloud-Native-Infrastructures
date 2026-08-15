@@ -4,10 +4,12 @@ import { PageHeader } from "../components/PageHeader";
 import { useReports } from "../hooks/useReports";
 
 export function DashboardPage() {
-  const { pending, resolved, loading, error, refresh } = useReports();
+  const { issues, pending, resolved, loading, error, refresh } = useReports();
   // A failed fetch used to render a confident "0 pending issues" — in an
-  // incident tool that is the opposite of the truth.
-  const unavailable = loading || Boolean(error);
+  // incident tool that is the opposite of the truth. But once counts ARE
+  // known, a failed background refresh must not blank them either: the banner
+  // below already says they may be stale, which beats "—" on top of real data.
+  const unavailable = loading || (Boolean(error) && issues.length === 0);
 
   const stats = [
     {
@@ -54,7 +56,9 @@ export function DashboardPage() {
           role="alert"
           className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
         >
-          Couldn't reach the diagnostic agent — issue counts are unavailable.
+          {issues.length === 0
+            ? "Couldn't reach the diagnostic agent — issue counts are unavailable."
+            : "Couldn't refresh from the diagnostic agent — these counts may be stale."}
           <span className="text-xs text-[var(--color-muted)]">{error}</span>
           <button
             onClick={refresh}

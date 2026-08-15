@@ -60,7 +60,7 @@ function WireNotice({ count, onReload }: { count: number; onReload: () => void }
 }
 
 export function IssuesPage() {
-  const { pending, resolved, loading, error, problems, refresh } = useReports();
+  const { issues, pending, resolved, loading, error, problems, refresh } = useReports();
   const [tab, setTab] = useState<IssueStatus>("pending");
 
   const tabs: { key: IssueStatus; label: string; count: number }[] = [
@@ -106,7 +106,26 @@ export function IssuesPage() {
 
       {droppedCount > 0 && <WireNotice count={droppedCount} onReload={refresh} />}
 
-      {error ? (
+      {/* A failed *refresh* must not throw away a list that is still on screen
+          — the reducer deliberately preserves `issues` for exactly this. Only
+          take over the viewport when there is genuinely nothing to show. */}
+      {error && issues.length > 0 && (
+        <div
+          role="alert"
+          className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-2 text-xs text-[var(--color-danger)]"
+        >
+          Couldn't refresh from the diagnostic agent — this list may be stale.
+          <span className="text-[var(--color-muted)]">{error}</span>
+          <button
+            onClick={refresh}
+            className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1 font-medium text-white transition-colors hover:bg-[var(--color-surface-2)]"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Retry
+          </button>
+        </div>
+      )}
+
+      {error && issues.length === 0 ? (
         <div className="card flex flex-col items-center gap-2 border-[var(--color-danger)]/40 py-16 text-center">
           <AlertTriangle className="h-5 w-5 text-[var(--color-danger)]" />
           <p className="text-sm text-[var(--color-danger)]">Couldn't reach the diagnostic agent.</p>

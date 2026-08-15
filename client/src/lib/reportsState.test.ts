@@ -63,21 +63,55 @@ describe("fetch_succeeded", () => {
     expect(state.fetching).toBe(false);
   });
 
-  it("clears a previous error and drops stale list problems, keeping the others", () => {
+  it("clears a previous error and supersedes every earlier drop, keeping repairs", () => {
     const seeded: ReportsState = {
       ...initialReportsState,
       error: "old failure",
       problems: [
         problem({ source: "list", reason: "stale" }),
-        problem({ source: "stream", reason: "kept" }),
-        problem({ source: "detail", reason: "kept too" }),
+        // Must not survive: IssuesPage counts it, and its own Reload button
+        // would otherwise never be able to clear the banner.
+        problem({ source: "stream", kind: "dropped", reason: "bad frame" }),
+        problem({ source: "detail", kind: "repaired", id: "rep-1", reason: "defaulted `title`" }),
       ],
     };
 
     const state = reportsReducer(seeded, { type: "fetch_succeeded", issues: [], problems: [] });
 
     expect(state.error).toBeNull();
-    expect(state.problems.map((p) => p.source)).toEqual(["stream", "detail"]);
+    expect(state.problems).toHaveLength(1);
+    expect(state.problems[0]).toMatchObject({ source: "detail", kind: "repaired" });
+  });
+
+  it("repairs an already-cached detail from the fresh snapshot", () => {
+    const seeded: ReportsState = {
+      ...initialReportsState,
+      issues: [summary({ id: "rep-1", status: "pending" })],
+      details: { "rep-1": detail({ id: "rep-1", status: "pending" }) },
+    };
+
+    // The resync after a reconnect: the snapshot knows about a status change
+    // whose SSE event the broadcaster dropped.
+    const state = reportsReducer(seeded, {
+      type: "fetch_succeeded",
+      issues: [summary({ id: "rep-1", status: "resolved" })],
+      problems: [],
+    });
+
+    expect(state.details["rep-1"].status).toBe("resolved");
+    // …without discarding the narrative fields GET /reports does not carry.
+    expect(state.details["rep-1"].markdownExport).toBe("# Checkout errors");
+    expect(state.details["rep-1"].errorSources).toEqual(["checkout pod logs"]);
+  });
+
+  it("does not invent a detail for a report that was never opened", () => {
+    const state = reportsReducer(initialReportsState, {
+      type: "fetch_succeeded",
+      issues: [summary({ id: "rep-1" })],
+      problems: [],
+    });
+
+    expect(state.details).toEqual({});
   });
 });
 

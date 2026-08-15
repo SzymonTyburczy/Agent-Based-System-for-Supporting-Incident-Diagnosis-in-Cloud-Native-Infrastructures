@@ -29,6 +29,28 @@ function BackLink() {
   );
 }
 
+/**
+ * Reachable from two places on purpose: the cold case (nothing cached, so it
+ * takes the whole page) and the warm case (a cached summary paints the header
+ * while the detail request fails). Keying the error UI on `!head` alone hid it
+ * on the common list→detail click, leaving a placeholder that never resolved.
+ */
+function LoadErrorCard({ message, onRetry }: { message: string | null; onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="card flex flex-col items-center gap-2 border-[var(--color-danger)]/40 py-16 text-center"
+    >
+      <AlertTriangle className="h-5 w-5 text-[var(--color-danger)]" />
+      <p className="text-sm text-[var(--color-danger)]">Couldn't load the full report.</p>
+      <p className="text-xs text-[var(--color-muted)]">{message}</p>
+      <button onClick={onRetry} className={`mt-2 ${SECONDARY_BUTTON}`}>
+        <RefreshCw className="h-3.5 w-3.5" /> Retry
+      </button>
+    </div>
+  );
+}
+
 function CopyMarkdownButton({ markdown }: { markdown: string }) {
   const { flag: copied, trigger: markCopied } = useTransientFlag(2000);
   return (
@@ -39,6 +61,9 @@ function CopyMarkdownButton({ markdown }: { markdown: string }) {
           .then(markCopied)
           .catch(() => {})
       }
+      // The visible label is hidden below `sm`, and lucide marks its icons
+      // aria-hidden — without this the button announces as just "button".
+      aria-label="Copy Markdown"
       className={SECONDARY_BUTTON}
     >
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -71,14 +96,7 @@ export function IssueDetailPage() {
     return (
       <div className="w-full pb-8">
         <BackLink />
-        <div className="card flex flex-col items-center gap-2 border-[var(--color-danger)]/40 py-16 text-center">
-          <AlertTriangle className="h-5 w-5 text-[var(--color-danger)]" />
-          <p className="text-sm text-[var(--color-danger)]">Couldn't load this issue.</p>
-          <p className="text-xs text-[var(--color-muted)]">{error}</p>
-          <button onClick={retry} className={`mt-2 ${SECONDARY_BUTTON}`}>
-            <RefreshCw className="h-3.5 w-3.5" /> Retry
-          </button>
-        </div>
+        <LoadErrorCard message={error} onRetry={retry} />
       </div>
     );
   }
@@ -190,6 +208,10 @@ export function IssueDetailPage() {
             )}
             {sections.isEmpty && <ReportEmptyState />}
           </div>
+        ) : status === "error" ? (
+          // The header is painted from the cached summary, but the detail
+          // request failed — say so instead of spinning forever.
+          <LoadErrorCard message={error} onRetry={retry} />
         ) : (
           <div
             role="status"

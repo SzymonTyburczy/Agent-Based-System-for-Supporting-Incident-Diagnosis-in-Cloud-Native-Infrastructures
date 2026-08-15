@@ -95,15 +95,36 @@ export function reportsReducer(state: ReportsState, action: ReportsAction): Repo
       return { ...state, fetching: true };
 
     case "fetch_succeeded": {
+      const issues = action.issues.slice().sort(compareIssues);
+      // The snapshot must repair BOTH sides, the way applyEvent and
+      // detail_loaded do. Otherwise the reconnect resync — which exists
+      // precisely because the broadcaster drops events on a full queue —
+      // cannot fix an open detail page, since `detail ?? summary` prefers the
+      // stale detail. The list row is authoritative for the summary fields it
+      // carries; the narrative fields it doesn't carry are kept as they were.
+      let details = state.details;
+      for (const issue of issues) {
+        const existing = details[issue.id];
+        if (existing) details = { ...details, [issue.id]: { ...existing, ...issue } };
+      }
+
       const base: ReportsState = {
         ...state,
-        issues: action.issues.slice().sort(compareIssues),
+        issues,
+        details,
         fetching: false,
         loading: false,
         error: null,
+        // A fresh snapshot supersedes every earlier drop, whatever its source
+        // — otherwise IssuesPage's "couldn't be read" banner counts a
+        // stream-sourced drop that its own Reload button can never clear.
+        // `repaired` problems survive as the per-id session log the detail
+        // page reads through selectProblemsForId.
         problems: capProblems([
           ...action.problems,
-          ...state.problems.filter((problem) => problem.source !== "list"),
+          ...state.problems.filter(
+            (problem) => problem.source !== "list" && problem.kind !== "dropped",
+          ),
         ]),
       };
       // Events that arrived while the snapshot was in flight are replayed on

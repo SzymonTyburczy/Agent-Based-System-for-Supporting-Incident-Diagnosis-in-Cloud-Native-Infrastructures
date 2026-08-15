@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { describeAgentError, fetchIssue, isAbort, isNotFound, updateIssueStatus } from "../lib/api";
 import type { WireProblem } from "../lib/reportWire";
 import { selectProblemsForId } from "../lib/reportsState";
@@ -36,6 +36,8 @@ export function useIssueDetail(id: string | undefined): UseIssueDetailResult {
   const [reloadToken, setReloadToken] = useState(0);
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  // The in-flight revalidating read, so a status write can supersede it.
+  const readRef = useRef<AbortController | null>(null);
 
   const detail = id ? (state.details[id] ?? null) : null;
   const summary = id ? (state.issues.find((issue) => issue.id === id) ?? null) : null;
@@ -49,10 +51,14 @@ export function useIssueDetail(id: string | undefined): UseIssueDetailResult {
     }
 
     const controller = new AbortController();
+    readRef.current = controller;
     setError(null);
 
     fetchIssue(id, { signal: controller.signal })
       .then((result) => {
+        // A status write (or a route change) has superseded this read: its
+        // body predates the PATCH, so applying it would revert the toggle.
+        if (controller.signal.aborted) return;
         dispatch({ type: "detail_loaded", detail: result.issue, problems: result.problems });
         setPhase("ready");
       })
@@ -66,7 +72,10 @@ export function useIssueDetail(id: string | undefined): UseIssueDetailResult {
         setPhase("error");
       });
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (readRef.current === controller) readRef.current = null;
+    };
   }, [id, reloadToken, dispatch]);
 
   const retry = useCallback(() => {
@@ -79,6 +88,9 @@ export function useIssueDetail(id: string | undefined): UseIssueDetailResult {
   const toggleStatus = useCallback(() => {
     if (!id || !current || updating) return;
     const nextStatus = current.status === "pending" ? "resolved" : "pending";
+    // The PATCH response is authoritative; a read still in flight carries the
+    // pre-write state and would otherwise land last and revert it.
+    readRef.current?.abort();
     setUpdating(true);
     setUpdateError(null);
 
