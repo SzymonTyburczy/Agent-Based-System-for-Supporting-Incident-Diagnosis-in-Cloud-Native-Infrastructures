@@ -24,13 +24,13 @@ later piece expects the one before it to already be reachable.
 ## 1. Start the example infrastructure
 
 ```bash
-cd example-infrastructure
-./deploy-stack.sh
+./example-infrastructure/scripts/bash/deploy-stack.sh
 ```
 
 This brings up Prometheus, Alertmanager, Grafana, and the `mcp-grafana`
 MCP server. See [`example-infrastructure/README.md`](example-infrastructure/README.md)
-for exact prerequisites, ports, and how to tear it down (`./stop-stack.sh`).
+for exact prerequisites, ports, and how to tear it down
+(`./example-infrastructure/scripts/bash/stop-stack.sh`).
 
 Confirm it's reachable before moving on:
 - Grafana MCP server: `http://localhost:8000/sse`

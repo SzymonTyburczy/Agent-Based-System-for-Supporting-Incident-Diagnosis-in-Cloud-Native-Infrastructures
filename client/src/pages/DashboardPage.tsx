@@ -1,23 +1,24 @@
 import { Link } from "react-router-dom";
-import { CheckCircle2, Clock, FileText, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Clock, FileText, RefreshCw, ShieldAlert } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { useReports } from "../hooks/useReports";
 
 export function DashboardPage() {
-  const { issues, loading } = useReports();
-  const pending = issues.filter((i) => i.status === "pending").length;
-  const resolved = issues.filter((i) => i.status === "resolved").length;
+  const { pending, resolved, loading, error, refresh } = useReports();
+  // A failed fetch used to render a confident "0 pending issues" — in an
+  // incident tool that is the opposite of the truth.
+  const unavailable = loading || Boolean(error);
 
   const stats = [
     {
       label: "Pending issues",
-      value: loading ? "—" : pending,
+      value: unavailable ? "—" : pending.length,
       icon: Clock,
       color: "text-[var(--color-warning)]",
     },
     {
       label: "Resolved issues",
-      value: loading ? "—" : resolved,
+      value: unavailable ? "—" : resolved.length,
       icon: CheckCircle2,
       color: "text-[var(--color-success)]",
     },
@@ -47,6 +48,22 @@ export function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {error && (
+        <div
+          role="alert"
+          className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
+        >
+          Couldn't reach the diagnostic agent — issue counts are unavailable.
+          <span className="text-xs text-[var(--color-muted)]">{error}</span>
+          <button
+            onClick={refresh}
+            className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--color-surface-2)]"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Retry
+          </button>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Link

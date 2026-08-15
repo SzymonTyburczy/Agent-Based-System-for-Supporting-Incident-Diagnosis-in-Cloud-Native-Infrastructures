@@ -1,58 +1,40 @@
-import { useEffect, useState } from "react";
-import { fetchIssues, subscribeToReportEvents } from "../lib/api";
+import type { StreamStatus } from "../lib/api";
+import type { WireProblem } from "../lib/reportWire";
+import { selectIssues } from "../lib/reportsState";
 import type { IssueSummary } from "../lib/types";
+import { useReportsStore } from "./reportsContext";
 
-interface UseReportsResult {
+export interface UseReportsResult {
   issues: IssueSummary[];
+  pending: IssueSummary[];
+  resolved: IssueSummary[];
   loading: boolean;
   error: string | null;
+  stream: StreamStatus;
+  problems: WireProblem[];
+  refresh: () => void;
 }
 
 /**
- * Loads all issues once via GET /reports, then keeps them in sync with
- * agent-core's SSE stream (new investigations, status changes from any
- * client) for as long as the component using this hook stays mounted.
- * Deliberately unfiltered — the dashboard needs both pending and resolved
- * counts, and IssuesPage's tabs are a client-side split of the same list,
- * mirroring how the old mock data was consumed.
+ * A thin read over the shared store in `ReportsProvider` — no fetch, no
+ * subscription, no local state, so mounting this in several places costs
+ * nothing and the data outlives navigation.
+ *
+ * The underlying list is deliberately unfiltered: the Dashboard needs both
+ * counts and IssuesPage's tabs are a client-side split of the same list, so a
+ * server-side `?status=` filter could never serve this call site.
  */
 export function useReports(): UseReportsResult {
-  const [issues, setIssues] = useState<IssueSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { state, refresh } = useReportsStore();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchIssues()
-      .then((fetched) => {
-        if (cancelled) return;
-        setIssues(fetched);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    const unsubscribe = subscribeToReportEvents((event) => {
-      setIssues((prev) => {
-        const index = prev.findIndex((issue) => issue.id === event.issue.id);
-        if (index === -1) return [event.issue, ...prev];
-        const next = [...prev];
-        next[index] = event.issue;
-        return next;
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
-
-  return { issues, loading, error };
+  return {
+    issues: state.issues,
+    pending: selectIssues(state, "pending"),
+    resolved: selectIssues(state, "resolved"),
+    loading: state.loading,
+    error: state.error,
+    stream: state.stream,
+    problems: state.problems,
+    refresh,
+  };
 }

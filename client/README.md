@@ -20,9 +20,11 @@ Diagnosis in Cloud-Native Infrastructures_.
 - **Issues** — incidents split into _pending_ and _resolved_, loaded from the diagnostic
   agent (`agent-core`) via its REST API and kept in sync live over Server-Sent Events — a
   new investigation or a status change appears without refreshing the page. Clicking an
-  issue opens `/issues/:id` with the Markdown diagnostic report on the left, a "Mark
-  resolved"/"Reopen" action, and an AI chat panel on the right (chat is still local-state
-  only — RAG-backed chat wiring pending).
+  issue opens `/issues/:id`: a single centred report page built from the agent's
+  structured findings — the problem, the error sources it inspected, its suggested
+  remediations, and the raw model diagnosis behind a collapsible disclosure — plus a
+  "Mark resolved"/"Reopen" action and a "Copy Markdown" button that yields the agent's
+  own Markdown rendering of the report.
 - **Dashboard** — shortcuts and basic statistics, also sourced live from `agent-core`.
 - **Settings** — Gemini model selection and the default document author. The API key is
   configured exclusively via `.env` (see below), not from the UI.
