@@ -1,6 +1,7 @@
 import type { ComponentType, MouseEvent, ReactNode } from "react";
 import { Check, ChevronRight, Copy, Crosshair, Search, Terminal, Wrench } from "lucide-react";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { EmptyCard } from "./Cards";
 import { useTransientFlag } from "../hooks/useTransientFlag";
 import { countLines } from "../lib/issueView";
 
@@ -140,11 +141,7 @@ export function RawDiagnosisSection({ text, defaultOpen }: { text: string; defau
         <span className="rounded-full bg-[var(--color-bg)] px-2 py-0.5 text-[11px] font-normal text-[var(--color-muted)]">
           {lines} {lines === 1 ? "line" : "lines"}
         </span>
-        <button
-          onClick={copy}
-          aria-label="Copy raw diagnosis"
-          className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--color-surface-2)]"
-        >
+        <button onClick={copy} aria-label="Copy raw diagnosis" className="btn-secondary ml-auto">
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
         </button>
@@ -157,11 +154,5 @@ export function RawDiagnosisSection({ text, defaultOpen }: { text: string; defau
 }
 
 export function ReportEmptyState() {
-  return (
-    <div className="card flex flex-col items-center justify-center border-dashed py-16 text-center">
-      <p className="text-sm text-[var(--color-muted)]">
-        The agent produced no readable content for this report.
-      </p>
-    </div>
-  );
+  return <EmptyCard>The agent produced no readable content for this report.</EmptyCard>;
 }

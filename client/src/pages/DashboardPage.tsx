@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { CheckCircle2, Clock, FileText, RefreshCw, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Clock, FileText, ShieldAlert } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
+import { StaleBanner } from "../components/Cards";
 import { useReports } from "../hooks/useReports";
 
 export function DashboardPage() {
@@ -24,12 +25,6 @@ export function DashboardPage() {
       icon: CheckCircle2,
       color: "text-[var(--color-success)]",
     },
-    {
-      label: "Documents in knowledge base",
-      value: "—",
-      icon: FileText,
-      color: "text-[var(--color-brand)]",
-    },
   ];
 
   return (
@@ -39,7 +34,7 @@ export function DashboardPage() {
         description="Overview of the system supporting incident diagnosis in cloud-native infrastructure."
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {stats.map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="card p-5">
             <div className="flex items-center justify-between">
@@ -52,20 +47,16 @@ export function DashboardPage() {
       </div>
 
       {error && (
-        <div
-          role="alert"
-          className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
-        >
-          {issues.length === 0
-            ? "Couldn't reach the diagnostic agent — issue counts are unavailable."
-            : "Couldn't refresh from the diagnostic agent — these counts may be stale."}
-          <span className="text-xs text-[var(--color-muted)]">{error}</span>
-          <button
-            onClick={refresh}
-            className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--color-surface-2)]"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> Retry
-          </button>
+        <div className="mt-4">
+          <StaleBanner
+            message={
+              issues.length === 0
+                ? "Couldn't reach the diagnostic agent — issue counts are unavailable."
+                : "Couldn't refresh from the diagnostic agent — these counts may be stale."
+            }
+            detail={error}
+            onRetry={refresh}
+          />
         </div>
       )}
 

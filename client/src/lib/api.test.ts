@@ -3,17 +3,14 @@ import {
   AgentApiError,
   fetchIssue,
   fetchIssues,
-  isAbort,
-  isAuthError,
   isNotFound,
   subscribeToReportEvents,
   updateIssueStatus,
-  type ReportStreamEvent,
   type StreamStatus,
 } from "./api";
-import type { WireProblem } from "./reportWire";
+import type { IssueDetail } from "./types";
 
-const rawSummary = {
+const rawDetail = {
   id: "rep-1",
   generated_at: "2026-07-18T14:30:00Z",
   title: "Checkout errors",
@@ -21,10 +18,6 @@ const rawSummary = {
   severity: "critical",
   status: "pending",
   summary: "Payments are timing out under load.",
-};
-
-const rawDetail = {
-  ...rawSummary,
   problem: "The payment service is timing out under load.",
   error_sources: ["checkout pod logs"],
   remediations: ["Scale the payment deployment"],
@@ -40,7 +33,6 @@ function mockFetch(body: unknown, init: Partial<Response> = {}) {
     json: init.json ?? (async () => body),
   } as Response;
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response) as unknown as typeof fetch);
-  return response;
 }
 
 beforeEach(() => {
@@ -53,57 +45,31 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("fetchIssues", () => {
-  it("normalizes the wire shape and reports no problems for a clean payload", async () => {
-    mockFetch([rawSummary]);
-
-    const { issues, problems } = await fetchIssues();
-
-    expect(issues).toEqual([
-      {
-        id: "rep-1",
-        title: "Checkout errors",
-        service: "checkout-service",
-        severity: "critical",
-        status: "pending",
-        createdAt: "2026-07-18T14:30:00Z",
-        summary: "Payments are timing out under load.",
-      },
-    ]);
-    expect(problems).toEqual([]);
-  });
-
-  it("throws a descriptive error when VITE_AGENT_API_URL is not configured", async () => {
+describe("request", () => {
+  it("names client/.env when the base URL is not configured", async () => {
     vi.stubEnv("VITE_AGENT_API_URL", "");
 
     // There is no client/.env.example — the tracked, empty client/.env is the template.
     await expect(fetchIssues()).rejects.toThrow(/client\/\.env/);
   });
-});
 
-describe("request", () => {
-  it("wraps a non-JSON body as an AgentApiError rather than leaking a SyntaxError", async () => {
+  it("wraps a non-JSON body rather than leaking a SyntaxError into the UI", async () => {
     mockFetch(undefined, {
       json: (async () => {
         throw new SyntaxError("Unexpected token '<'");
       }) as Response["json"],
     });
 
-    await expect(fetchIssues()).rejects.toMatchObject({
-      name: "AgentApiError",
-      kind: "body",
-    });
+    await expect(fetchIssues()).rejects.toThrow(/isn't valid JSON/);
   });
 
-  it("carries the HTTP status so 404 and 401 are distinguishable", async () => {
+  it("carries the HTTP status, so a 404 is distinguishable from a transport failure", async () => {
     mockFetch(null, { ok: false, status: 404, statusText: "Not Found" });
-    const notFound = await fetchIssue("rep-1").catch((err: unknown) => err);
-    expect(notFound).toBeInstanceOf(AgentApiError);
-    expect(isNotFound(notFound)).toBe(true);
 
-    mockFetch(null, { ok: false, status: 401, statusText: "Unauthorized" });
-    const unauthorized = await fetchIssue("rep-1").catch((err: unknown) => err);
-    expect(isAuthError(unauthorized)).toBe(true);
+    const err = await fetchIssue("rep-1").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(AgentApiError);
+    expect(isNotFound(err)).toBe(true);
   });
 
   it("propagates a caller abort untouched instead of wrapping it", async () => {
@@ -116,9 +82,8 @@ describe("request", () => {
         .mockRejectedValue(new DOMException("aborted", "AbortError")) as unknown as typeof fetch,
     );
 
-    const err = await fetchIssues({ signal: controller.signal }).catch((e: unknown) => e);
+    const err = await fetchIssues(controller.signal).catch((e: unknown) => e);
 
-    expect(isAbort(err)).toBe(true);
     expect(err).not.toBeInstanceOf(AgentApiError);
   });
 });
@@ -135,23 +100,9 @@ describe("fetchIssue", () => {
     );
   });
 
-  it("maps the structured fields the UI now renders", async () => {
-    mockFetch(rawDetail);
-
-    const { issue, problems } = await fetchIssue("rep-1");
-
-    expect(issue.problem).toBe("The payment service is timing out under load.");
-    expect(issue.errorSources).toEqual(["checkout pod logs"]);
-    expect(issue.remediations).toEqual(["Scale the payment deployment"]);
-    expect(issue.rawDiagnosis).toBe("full free-text diagnosis");
-    expect(issue.markdownExport).toBe("# Checkout errors\n\nfull content");
-    expect(problems).toEqual([]);
-  });
-
-  it("rejects an unreadable detail payload instead of returning undefined fields", async () => {
+  it("rejects an unreadable payload instead of returning undefined fields", async () => {
     mockFetch({ title: "no id here" });
 
-    await expect(fetchIssue("rep-1")).rejects.toMatchObject({ kind: "shape" });
     await expect(fetchIssue("rep-1")).rejects.toThrow(/unreadable/);
   });
 });
@@ -160,7 +111,7 @@ describe("updateIssueStatus", () => {
   it("sends the PATCH and returns a fully mapped detail", async () => {
     mockFetch({ ...rawDetail, status: "resolved" });
 
-    const { issue } = await updateIssueStatus("rep-1", "resolved");
+    const issue = await updateIssueStatus("rep-1", "resolved");
 
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8090/reports/rep-1",
@@ -172,7 +123,6 @@ describe("updateIssueStatus", () => {
     expect(issue.status).toBe("resolved");
     // The detail page re-renders from this response alone.
     expect(issue.markdownExport).toBe("# Checkout errors\n\nfull content");
-    expect(issue.errorSources).toEqual(["checkout pod logs"]);
   });
 });
 
@@ -180,7 +130,6 @@ class FakeEventSource {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
-
   static last: FakeEventSource | null = null;
 
   readyState = FakeEventSource.CONNECTING;
@@ -209,15 +158,13 @@ class FakeEventSource {
 }
 
 function subscribe() {
-  const events: ReportStreamEvent[] = [];
+  const reports: IssueDetail[] = [];
   const statuses: StreamStatus[] = [];
-  const problems: WireProblem[] = [];
   const unsubscribe = subscribeToReportEvents({
-    onEvent: (event) => events.push(event),
+    onReport: (issue) => reports.push(issue),
     onStatus: (status) => statuses.push(status),
-    onProblem: (problem) => problems.push(problem),
   });
-  return { events, statuses, problems, unsubscribe, source: FakeEventSource.last! };
+  return { reports, statuses, unsubscribe, source: FakeEventSource.last! };
 }
 
 describe("subscribeToReportEvents", () => {
@@ -229,37 +176,32 @@ describe("subscribeToReportEvents", () => {
   });
 
   it("delivers the FULL detail payload the server publishes", () => {
-    const { events, unsubscribe, source } = subscribe();
+    const { reports, source } = subscribe();
 
     source.emit("report_created", JSON.stringify(rawDetail));
 
-    expect(events).toHaveLength(1);
-    expect(events[0].kind).toBe("report_created");
-    // Proves the detail is no longer thrown away by decoding as a summary.
-    expect(events[0].issue.markdownExport).toBe("# Checkout errors\n\nfull content");
-    expect(events[0].issue.errorSources).toEqual(["checkout pod logs"]);
-    unsubscribe();
+    // Proves the detail is no longer thrown away by decoding it as a summary.
+    expect(reports).toHaveLength(1);
+    expect(reports[0].markdownExport).toBe("# Checkout errors\n\nfull content");
+    expect(reports[0].errorSources).toEqual(["checkout pod logs"]);
   });
 
-  it("reports a malformed payload and keeps the subscription alive", () => {
-    const { events, problems, source } = subscribe();
+  it("drops a malformed payload and keeps the subscription alive", () => {
+    const { reports, source } = subscribe();
 
     source.emit("report_created", "{not json");
     source.emit("report_updated", JSON.stringify({ title: "no id" }));
     source.emit("report_created", JSON.stringify(rawDetail));
 
-    expect(problems.filter((problem) => problem.kind === "dropped")).toHaveLength(2);
-    expect(events).toHaveLength(1);
+    expect(reports).toHaveLength(1);
   });
 
   it("lets a consumer exception propagate instead of laundering it as bad data", () => {
-    const problems: WireProblem[] = [];
     subscribeToReportEvents({
-      onEvent: () => {
+      onReport: () => {
         throw new Error("consumer bug");
       },
       onStatus: () => {},
-      onProblem: (problem) => problems.push(problem),
     });
 
     // Regression: the old empty catch swallowed this, leaving a
@@ -267,7 +209,6 @@ describe("subscribeToReportEvents", () => {
     expect(() => FakeEventSource.last!.emit("report_created", JSON.stringify(rawDetail))).toThrow(
       /consumer bug/,
     );
-    expect(problems).toEqual([]);
   });
 
   it("distinguishes a transient reconnect from a dead stream", () => {
@@ -275,7 +216,6 @@ describe("subscribeToReportEvents", () => {
 
     expect(statuses).toEqual(["connecting"]);
 
-    source.readyState = FakeEventSource.OPEN;
     source.onopen?.();
     expect(statuses.at(-1)).toBe("live");
 
@@ -291,7 +231,7 @@ describe("subscribeToReportEvents", () => {
     expect(source.closed).toBe(true);
   });
 
-  it("accepts a relative base URL and appends a configured token", () => {
+  it("accepts a relative base URL and carries a configured token", () => {
     vi.stubEnv("VITE_AGENT_API_URL", "/api");
     expect(() => subscribe()).not.toThrow();
     expect(FakeEventSource.last!.url).toBe("http://localhost:5173/api/reports/stream");

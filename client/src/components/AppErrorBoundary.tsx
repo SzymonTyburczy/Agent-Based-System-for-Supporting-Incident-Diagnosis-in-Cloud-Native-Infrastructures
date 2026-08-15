@@ -40,10 +40,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           Something went wrong rendering this page.
         </p>
         <p className="text-xs text-[var(--color-muted)]">{error.message}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="mt-2 flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--color-surface-2)]"
-        >
+        <button onClick={() => window.location.reload()} className="btn-secondary mt-2">
           <RefreshCw className="h-3.5 w-3.5" />
           Reload
         </button>

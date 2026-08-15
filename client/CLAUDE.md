@@ -12,28 +12,33 @@ Main views:
   Send currently logs the payload to the console and clears the form — no backend yet.
   The in-progress draft is persisted to localStorage.
 - **Issues** — split into pending and resolved, loaded from `agent-core`'s `/reports*`
-  API and kept in sync over SSE. One shared store (`ReportsProvider`, mounted in `Layout`)
-  serves the Issues, Dashboard and detail views: a single `GET /reports` and a single
-  `EventSource` for the app's lifetime. An issue opens `/issues/:id` — a single centred
+  API and kept in sync over SSE. TanStack Query owns the cache: one `GET /reports` for the
+  app's lifetime (`staleTime: Infinity` — the SSE stream is the freshness mechanism, not
+  polling), and `ReportsStream` feeds every event straight into it. An issue opens
+  `/issues/:id` — a single centred
   document built from the report's structured fields (`problem`, `error_sources`,
   `remediations`, `raw_diagnosis`), with a "Mark resolved"/"Reopen" action
   (`PATCH /reports/{id}`) and a "Copy Markdown" button.
-- **Dashboard** — issue counts from the same live `useReports` data; the document count
-  is still a placeholder (no RAG backend yet).
+- **Dashboard** — issue counts from the same live `useReports` data.
 - **Settings** — Gemini model, default author; the API key comes only from
   `VITE_GEMINI_API_KEY` in `client/.env` — it is not configurable from the UI.
 
 Conventions:
 
-- `src/lib/` — pure logic (api, reportWire, reportsState, issueView, converter, models,
+- `src/lib/` — pure logic (api, reportWire, reportsCache, issueView, converter, models,
   settings, types, format); vitest tests live alongside the tested module.
 - `src/lib/api.ts` — the only place that talks to `agent-core`. Its `request()` returns
   `unknown` on purpose: `src/lib/reportWire.ts` is the single decode boundary where wire
   JSON becomes `IssueSummary` / `IssueDetail`, and both the REST and the SSE path go
   through it.
+- `src/lib/reportsCache.ts` — the query keys, the `QueryClient` defaults, and
+  `cacheReport()`, which writes one report into both the detail and the list cache. Any
+  new consumer of report data reads through `useReports` / `useIssueDetail`, not `fetch`.
 - `src/hooks/` — shared hooks (`useReports`, `useIssueDetail`, `useDocDraft`,
-  `useTransientFlag`) plus `reportsContext`.
-- Shared `.card` / `.input` CSS component classes live in `src/index.css`.
+  `useTransientFlag`) plus `streamContext`.
+- Shared `.card` / `.input` / `.btn-secondary` CSS component classes live in
+  `src/index.css`; shared `EmptyCard` / `ErrorCard` / `StaleBanner` / `IssueMeta` live in
+  `src/components/Cards.tsx`. Use them rather than re-pasting the Tailwind string.
 - Named exports everywhere (no default exports).
 - `client/.env` is tracked with an empty key as a template — never commit a real key;
   after pasting one locally run `git update-index --skip-worktree client/.env`.
@@ -59,7 +64,5 @@ Report rendering — standing rules:
   nested `overflow-y-auto` regions (the sole exception is the raw-diagnosis `<details>`,
   which is a disclosure, not a scroll region).
 - The AI chat panel was removed deliberately and is postponed to the end of the project.
-  When it returns it will be the first always-mounted second consumer of the reports
-  store, which is what the `ReportsProvider` context already exists to serve.
 
 Checks: `npm run typecheck`, `npm test`, `npm run lint`, `npm run format:check`.

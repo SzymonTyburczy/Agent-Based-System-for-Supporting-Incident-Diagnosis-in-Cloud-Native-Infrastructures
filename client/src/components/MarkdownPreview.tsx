@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from "react";
+import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -8,7 +8,6 @@ interface MarkdownPreviewProps {
   size?: "sm" | "base";
   /** "agent" neutralizes images in LLM-authored text. Default "user". */
   source?: "user" | "agent";
-  emptyState?: ReactNode;
 }
 
 // Module-level so their identity is stable and `memo` is not defeated. Each
@@ -44,15 +43,12 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   content,
   size = "sm",
   source = "user",
-  emptyState,
 }: MarkdownPreviewProps) {
   if (!content.trim()) {
     return (
-      emptyState ?? (
-        <div className="flex h-full items-center justify-center text-sm text-[var(--color-muted)]">
-          Markdown preview will appear here.
-        </div>
-      )
+      <div className="flex h-full items-center justify-center text-sm text-[var(--color-muted)]">
+        Markdown preview will appear here.
+      </div>
     );
   }
 

@@ -11,15 +11,6 @@ export interface ConversionResult {
   engine: ConversionEngine;
 }
 
-export class MissingApiKeyError extends Error {
-  constructor() {
-    super(
-      "Missing Gemini API key. Set VITE_GEMINI_API_KEY in client/.env and restart the dev server to convert PDF files.",
-    );
-    this.name = "MissingApiKeyError";
-  }
-}
-
 // Gemini inline data is limited to ~20 MB per request; leave headroom for the base64 overhead.
 export const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
@@ -91,7 +82,9 @@ function delay(ms: number): Promise<void> {
 async function convertPdfWithGemini(file: File): Promise<string> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    throw new MissingApiKeyError();
+    throw new Error(
+      "Missing Gemini API key. Set VITE_GEMINI_API_KEY in client/.env and restart the dev server to convert PDF files.",
+    );
   }
 
   const ai = new GoogleGenAI({ apiKey });

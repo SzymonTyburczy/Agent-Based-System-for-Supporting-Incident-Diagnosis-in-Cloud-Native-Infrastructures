@@ -25,7 +25,7 @@ Diagnosis in Cloud-Native Infrastructures_.
   remediations, and the raw model diagnosis behind a collapsible disclosure — plus a
   "Mark resolved"/"Reopen" action and a "Copy Markdown" button that yields the agent's
   own Markdown rendering of the report.
-- **Dashboard** — shortcuts and basic statistics, also sourced live from `agent-core`.
+- **Dashboard** — shortcuts and issue counts, also sourced live from `agent-core`.
 - **Settings** — Gemini model selection and the default document author. The API key is
   configured exclusively via `.env` (see below), not from the UI.
 
@@ -81,7 +81,8 @@ VITE_AGENT_API_TOKEN=<only if agent-core was started with CLIENT_API_TOKEN set>
 
 ## Stack
 
-React 19, React Router, Tailwind CSS v4, react-dropzone, react-markdown + remark-gfm,
+React 19, React Router, TanStack Query, Tailwind CSS v4, react-dropzone,
+react-markdown + remark-gfm,
 `@google/genai`, date-fns, lucide-react, vitest.
 
 > Note: `VITE_*` variables are compiled into the public JS bundle — every key here (Gemini,

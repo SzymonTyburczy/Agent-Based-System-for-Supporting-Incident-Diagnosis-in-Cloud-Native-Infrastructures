@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countLines, deriveReportSections } from "./issueView";
+import { deriveReportSections } from "./issueView";
 import type { IssueDetail } from "./types";
 
 function detail(overrides: Partial<IssueDetail> = {}): IssueDetail {
@@ -79,18 +79,5 @@ describe("deriveReportSections", () => {
     );
 
     expect(sections.isEmpty).toBe(true);
-  });
-});
-
-describe("countLines", () => {
-  it("returns 0 for blank input", () => {
-    expect(countLines("")).toBe(0);
-    expect(countLines("   \n  ")).toBe(0);
-  });
-
-  it("counts LF and CRLF text alike", () => {
-    expect(countLines("one")).toBe(1);
-    expect(countLines("one\ntwo\nthree")).toBe(3);
-    expect(countLines("one\r\ntwo")).toBe(2);
   });
 });

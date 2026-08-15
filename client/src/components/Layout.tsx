@@ -10,8 +10,8 @@ import {
   WifiOff,
 } from "lucide-react";
 import { AppErrorBoundary } from "./AppErrorBoundary";
-import { ReportsProvider } from "./ReportsProvider";
-import { useReportsStore } from "../hooks/reportsContext";
+import { ReportsStream } from "./ReportsStream";
+import { useStreamStatus } from "../hooks/streamContext";
 import { getGeminiApiKey } from "../lib/settings";
 
 const navItems = [
@@ -49,8 +49,7 @@ const streamStates = {
  * stopped updating.
  */
 function StreamStatusPill() {
-  const { state } = useReportsStore();
-  const { Icon, label, title, color } = streamStates[state.stream];
+  const { Icon, label, title, color } = streamStates[useStreamStatus()];
 
   return (
     <div
@@ -75,7 +74,7 @@ export function Layout() {
   }, [pathname]);
 
   return (
-    <ReportsProvider>
+    <ReportsStream>
       <div className="flex h-screen overflow-hidden bg-[var(--color-bg)]">
         {/* Below md the sidebar collapses to an icon-only rail. */}
         <aside className="flex w-16 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] md:w-64">
@@ -140,6 +139,6 @@ export function Layout() {
           </div>
         </main>
       </div>
-    </ReportsProvider>
+    </ReportsStream>
   );
 }
