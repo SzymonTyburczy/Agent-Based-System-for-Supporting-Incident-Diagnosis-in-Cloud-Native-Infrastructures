@@ -239,10 +239,7 @@ export function DocumentationPage() {
               ))}
             </div>
             {rightTab === "json" && (
-              <button
-                onClick={copyJson}
-                className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-white hover:bg-[var(--color-surface-2)]"
-              >
+              <button onClick={copyJson} className="btn-secondary">
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 {copied ? "Copied" : "Copy"}
               </button>

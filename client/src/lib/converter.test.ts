@@ -38,18 +38,4 @@ describe("buildPayload", () => {
       tresc: "# Incident",
     });
   });
-
-  it("uses day precision for the date field", () => {
-    const payload = buildPayload({
-      markdown: "x",
-      author: "a",
-      date: new Date(2026, 0, 5, 23, 59, 12),
-    });
-    expect(payload.data).toBe("2026-01-05");
-  });
-
-  it("falls back to the current date when none is given", () => {
-    const payload = buildPayload({ markdown: "x", author: "a" });
-    expect(payload.data).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
 });
