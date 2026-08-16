@@ -28,11 +28,12 @@ export function useConverterHealth(): ConverterHealth {
       return { reachable: true, figureDescriptions: body.figure_descriptions === true };
     },
     // The service is started by hand and its config only changes on restart,
-    // so polling it would be noise. A retry covers the case where the panel
-    // is opened while the converter is still loading its models.
+    // so polling would be noise. No retry either: the converter does not bind
+    // its port until the models are loaded, so an early check is refused
+    // outright and no realistic delay would cover a 60-110 s start. The dialog
+    // tells the user to start it and reload.
     staleTime: Infinity,
-    retry: 1,
-    retryDelay: 3000,
+    retry: false,
   });
 
   return data ?? { reachable: false, figureDescriptions: false };

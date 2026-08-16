@@ -142,7 +142,7 @@ offline setup and the known limitation around multi-line code blocks.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | `5001` | where the converter listens |
+| `HOST` / `PORT` | `0.0.0.0` / `5001` | where the converter listens |
 | `API_TOKEN` | empty | bearer token the client must send; empty = no check |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS allowlist |
 | `MODELS_DIR` | empty | pre-fetched Docling weights; set it for offline operation |
@@ -157,10 +157,6 @@ offline setup and the known limitation around multi-line code blocks.
 | `VITE_AGENT_API_TOKEN` | only needed if `CLIENT_API_TOKEN` is set on the agent-core side |
 | `VITE_CONVERTER_URL` | base URL of the `doc-converter` service (e.g. `http://localhost:5001`) |
 | `VITE_CONVERTER_TOKEN` | only needed if `API_TOKEN` is set on the doc-converter side |
-
-Never commit real values for either `.env` — both are tracked with empty
-placeholders as templates; run `git update-index --skip-worktree <path>`
-after filling in your own.
 
 ## Smoke test without waiting for a real alert
 

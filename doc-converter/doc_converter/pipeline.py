@@ -34,10 +34,6 @@ class UnsupportedFileError(Exception):
     """The upload is not a PDF."""
 
 
-class FileTooLargeError(Exception):
-    """The upload exceeds max_upload_bytes."""
-
-
 @dataclass(frozen=True)
 class ConversionResult:
     markdown: str
@@ -45,7 +41,7 @@ class ConversionResult:
     duration_ms: int
 
 
-def validate_upload(filename: str, data: bytes, max_bytes: int) -> None:
+def validate_upload(filename: str, data: bytes) -> None:
     """Checks an upload before any model is touched.
 
     Sniffs the PDF header rather than trusting the extension or the
@@ -53,12 +49,6 @@ def validate_upload(filename: str, data: bytes, max_bytes: int) -> None:
     """
     if not data:
         raise UnsupportedFileError("The uploaded file is empty.")
-
-    if len(data) > max_bytes:
-        raise FileTooLargeError(
-            f"The file is {len(data) / 1024 / 1024:.1f} MB, "
-            f"over the {max_bytes / 1024 / 1024:.0f} MB limit."
-        )
 
     if not data.startswith(PDF_MAGIC):
         if Path(filename).suffix.lower() in PASSTHROUGH_SUFFIXES:
@@ -121,7 +111,7 @@ class ConversionPipeline:
         )
 
     def convert(self, filename: str, data: bytes) -> ConversionResult:
-        from docling.datamodel.base_models import DocumentStream
+        from docling.datamodel.base_models import ConversionStatus, DocumentStream
 
         started = time.monotonic()
         try:
@@ -129,6 +119,18 @@ class ConversionPipeline:
         except Exception as exc:  # noqa: BLE001 - Docling raises a wide range
             logger.exception("Docling failed on %s", filename)
             raise ConversionError(f"The document could not be parsed: {exc}") from exc
+
+        # Docling does NOT raise when it runs out of the document_timeout budget
+        # or a page fails to parse — it stops early and reports PARTIAL_SUCCESS.
+        # Returning that as a clean 200 would put a silently truncated runbook
+        # into the knowledge base, which is the failure MIN_USEFUL_CHARS exists
+        # to prevent.
+        if result.status != ConversionStatus.SUCCESS:
+            logger.warning("Docling returned %s for %s", result.status, filename)
+            raise ConversionError(
+                f"The document was only partially converted ({result.status.value}). "
+                "It may be too large for the conversion timeout, or partly unreadable."
+            )
 
         markdown = result.document.export_to_markdown(
             # Defaults would emit `container\_memory\_working\_set\_bytes` for

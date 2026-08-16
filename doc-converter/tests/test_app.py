@@ -66,9 +66,21 @@ def test_a_non_pdf_is_415_and_never_reaches_the_pipeline():
 
 
 def test_an_oversized_file_is_413():
-    response = post(client(Settings(_env_file=None, max_upload_bytes=64)), data=PDF + b"x" * 512)
+    response = post(client(Settings(_env_file=None, max_upload_bytes=64)), data=PDF + b"x" * 9000)
 
     assert response.status_code == 413
+
+
+def test_a_file_at_exactly_the_cap_is_accepted():
+    # The multipart envelope makes the body bigger than the file, so a cap set
+    # to the file size alone would 413 a file the browser's own check passed.
+    cap = 4096
+    response = post(
+        client(Settings(_env_file=None, max_upload_bytes=cap)),
+        data=PDF + b"x" * (cap - len(PDF)),
+    )
+
+    assert response.status_code == 200
 
 
 def test_an_unusable_document_is_422_not_500():

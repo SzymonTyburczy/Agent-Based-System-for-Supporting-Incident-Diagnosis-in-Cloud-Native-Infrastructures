@@ -66,7 +66,7 @@ curl -X POST localhost:5001/convert -F "file=@runbook.pdf"
 | `401` | wrong or missing token |
 | `413` | over `MAX_UPLOAD_BYTES` |
 | `415` | not a PDF — checked by file header, not extension |
-| `422` | the PDF opened but yielded almost no text (e.g. a scan with OCR off) |
+| `422` | the PDF opened but yielded almost no text (e.g. a scan with OCR off), or Docling only partially converted it (timeout, unreadable pages) |
 
 **`GET /healthz`** — `{"status":"ok","engine":"docling","ocr":false,…}`
 
@@ -76,7 +76,7 @@ Environment variables, or a `.env` file in this directory.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | `5001` | every other port is taken by the rest of the stack |
+| `HOST` / `PORT` | `0.0.0.0` / `5001` | binds every interface; use `127.0.0.1` to keep it on this machine |
 | `API_TOKEN` | empty | bearer token; empty disables the check |
 | `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS allowlist |
 | `MAX_UPLOAD_BYTES` | `15728640` | mirrors the client's own 15 MB cap |
@@ -97,6 +97,8 @@ it off, figures are simply skipped and everything else is identical.
 | `VLM_API_URL` | `http://localhost:11434/v1/chat/completions` |
 | `VLM_API_KEY` | empty |
 | `VLM_MODEL` | `llava` |
+| `VLM_PROMPT` | a one-line "describe this figure" instruction |
+| `VLM_TIMEOUT_SECONDS` | `60` |
 
 The endpoint is OpenAI-compatible, so the provider is the user's choice: Ollama
 locally with no key, or OpenAI with one. An empty key sends no `Authorization`

@@ -11,7 +11,6 @@ from doc_converter.config import Settings
 from doc_converter.pipeline import (
     ConversionError,
     ConversionPipeline,
-    FileTooLargeError,
     UnsupportedFileError,
     validate_upload,
 )
@@ -23,8 +22,12 @@ def create_app(settings: Settings | None = None, pipeline=None) -> Flask:
     """`pipeline` is injectable so the tests run without loading Docling."""
     settings = settings or Settings()
     app = Flask(__name__)
-    # Flask would otherwise buffer the whole body before our own size check.
-    app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_bytes
+    # The single upload-size guard: Werkzeug rejects an oversized body before the
+    # view runs. The slop covers the multipart envelope (boundary and
+    # Content-Disposition headers), so a file of exactly max_upload_bytes — which
+    # the browser's own check accepts — is not rejected here for being 200 bytes
+    # bigger on the wire than on disk.
+    app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_bytes + 8192
 
     # /healthz is included because the browser reads it too: the panel shows
     # whether this service has a model configured, and a cross-origin fetch
@@ -62,9 +65,7 @@ def create_app(settings: Settings | None = None, pipeline=None) -> Flask:
         filename = upload.filename or "document.pdf"
 
         try:
-            validate_upload(filename, data, settings.max_upload_bytes)
-        except FileTooLargeError as exc:
-            return jsonify(error=str(exc)), 413
+            validate_upload(filename, data)
         except UnsupportedFileError as exc:
             return jsonify(error=str(exc)), 415
 
@@ -84,8 +85,8 @@ def create_app(settings: Settings | None = None, pipeline=None) -> Flask:
 
     @app.errorhandler(413)
     def too_large(_error):
-        """Flask rejects an oversized body before the view runs, so
-        validate_upload's friendlier message would never be reached."""
+        """Werkzeug aborts an oversized upload during form parsing, before the
+        view runs, so the message has to be produced here."""
         return jsonify(error=f"The file is over the {settings.max_upload_bytes // 1024 // 1024} MB limit."), 413
 
     return app
