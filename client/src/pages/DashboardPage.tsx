@@ -68,8 +68,8 @@ export function DashboardPage() {
           <FileText className="h-6 w-6 text-[var(--color-brand)]" />
           <h3 className="mt-3 text-base font-semibold text-white">Add documentation</h3>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            Upload PDF or Markdown to the RAG knowledge base. PDFs are converted to Markdown with
-            Gemini.
+            Upload PDF or Markdown to the RAG knowledge base. PDFs are converted locally by the
+            doc-converter service.
           </p>
         </Link>
 

@@ -12,7 +12,7 @@ import {
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { ReportsStream } from "./ReportsStream";
 import { useStreamStatus } from "../hooks/streamContext";
-import { getGeminiApiKey } from "../lib/settings";
+import { ConverterStatus } from "./ConverterStatus";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -43,10 +43,9 @@ const streamStates = {
 };
 
 /**
- * Connection health belongs in the sidebar next to the Gemini indicator, not
- * as a banner on top of an incident report. Without it, a dead stream (agent
- * stopped, wrong token) leaves a healthy-looking list that has quietly
- * stopped updating.
+ * Connection health belongs in the sidebar, not as a banner on top of an
+ * incident report. Without it, a dead stream (agent stopped, wrong token)
+ * leaves a healthy-looking list that has quietly stopped updating.
  */
 function StreamStatusPill() {
   const { Icon, label, title, color } = streamStates[useStreamStatus()];
@@ -63,7 +62,6 @@ function StreamStatusPill() {
 }
 
 export function Layout() {
-  const hasKey = Boolean(getGeminiApiKey());
   const mainRef = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
 
@@ -114,19 +112,7 @@ export function Layout() {
 
           <div className="space-y-2 border-t border-[var(--color-border)] p-3">
             <StreamStatusPill />
-            <div
-              title={hasKey ? "Gemini API: key configured" : "Gemini API: no key"}
-              className="flex items-center justify-center gap-2 rounded-lg bg-[var(--color-surface-2)] px-3 py-2.5 text-xs md:justify-start"
-            >
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${
-                  hasKey ? "bg-[var(--color-success)]" : "bg-[var(--color-warning)]"
-                }`}
-              />
-              <span className="hidden text-[var(--color-muted)] md:inline">
-                Gemini API: {hasKey ? "key configured" : "no key"}
-              </span>
-            </div>
+            <ConverterStatus />
           </div>
         </aside>
 

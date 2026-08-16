@@ -20,7 +20,7 @@ function parseSourceFormat(value: unknown): SourceFormat | null {
 }
 
 function parseEngine(value: unknown): ConversionEngine | null {
-  return value === "gemini" || value === "passthrough" ? value : null;
+  return value === "docling" || value === "passthrough" ? value : null;
 }
 
 export function loadDocDraft(): DocDraft | null {

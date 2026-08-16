@@ -6,8 +6,8 @@ system in cloud-native infrastructures (IDAR).
 Main views:
 
 - **Documentation** — add documents (drag & drop / file picker, max 15 MB) to the RAG
-  knowledge base; PDF is converted to Markdown via Google Gemini, Markdown/text passes
-  through unchanged. The result is packed as JSON `{ data, autor, tresc }` (field names
+  knowledge base; PDF is converted to Markdown by the local `doc-converter` service,
+  Markdown/text passes through unchanged. The result is packed as JSON `{ data, autor, tresc }` (field names
   are Polish per the agreed backend contract; `data` is a day-precision date, yyyy-MM-dd).
   Send currently logs the payload to the console and clears the form — no backend yet.
   The in-progress draft is persisted to localStorage.
@@ -20,8 +20,10 @@ Main views:
   `remediations`, `raw_diagnosis`), with a "Mark resolved"/"Reopen" action
   (`PATCH /reports/{id}`) and a "Copy Markdown" button.
 - **Dashboard** — issue counts from the same live `useReports` data.
-- **Settings** — Gemini model, default author; the API key comes only from
-  `VITE_GEMINI_API_KEY` in `client/.env` — it is not configurable from the UI.
+- **Settings** — default document author only. No model key is configurable from this app:
+  the converter owns its own model configuration (`doc-converter/.env`). The sidebar reports
+  what the service says about itself via its `/healthz`, and the dialog explains where the key
+  goes — it never accepts one.
 
 Conventions:
 

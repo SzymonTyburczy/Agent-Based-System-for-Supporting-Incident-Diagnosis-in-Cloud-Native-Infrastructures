@@ -138,7 +138,7 @@ export function DocumentationPage() {
       <div className="shrink-0">
         <PageHeader
           title="Documentation"
-          description="Add documentation (PDF or Markdown) to the RAG knowledge base. PDF files are automatically converted to Markdown with Google Gemini."
+          description="Add documentation (PDF or Markdown) to the RAG knowledge base. PDFs are converted to Markdown locally, by the doc-converter service."
         />
       </div>
 

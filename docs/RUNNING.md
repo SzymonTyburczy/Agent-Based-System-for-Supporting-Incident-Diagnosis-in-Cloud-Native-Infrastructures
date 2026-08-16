@@ -84,9 +84,10 @@ git update-index --skip-worktree .env
 ```
 
 ```
-VITE_GEMINI_API_KEY=<your Gemini key>
 VITE_AGENT_API_URL=http://localhost:8090
 VITE_AGENT_API_TOKEN=<only if CLIENT_API_TOKEN is set in agent-core/.env>
+VITE_CONVERTER_URL=http://localhost:5001
+VITE_CONVERTER_TOKEN=<only if API_TOKEN is set in doc-converter/.env>
 ```
 
 ```bash
@@ -97,9 +98,9 @@ Open the printed URL (usually `http://localhost:5173`) and go to
 `/issues` — it should load without a connection error (an empty list is
 fine if no incidents have fired yet).
 
-## 4. (optional) Start the document converter
+## 4. Start the document converter
 
-Only needed for the Documentation view's PDF upload.
+Needed for the Documentation view's PDF upload; the rest of the app works without it.
 
 ```bash
 cd doc-converter
@@ -152,9 +153,10 @@ offline setup and the known limitation around multi-line code blocks.
 
 | Variable | Purpose |
 |---|---|
-| `VITE_GEMINI_API_KEY` | Google Gemini key, for PDF → Markdown conversion in the Documentation view |
 | `VITE_AGENT_API_URL` | base URL of `agent-core`'s `webhook_server` (e.g. `http://localhost:8090`) |
 | `VITE_AGENT_API_TOKEN` | only needed if `CLIENT_API_TOKEN` is set on the agent-core side |
+| `VITE_CONVERTER_URL` | base URL of the `doc-converter` service (e.g. `http://localhost:5001`) |
+| `VITE_CONVERTER_TOKEN` | only needed if `API_TOKEN` is set on the doc-converter side |
 
 Never commit real values for either `.env` — both are tracked with empty
 placeholders as templates; run `git update-index --skip-worktree <path>`

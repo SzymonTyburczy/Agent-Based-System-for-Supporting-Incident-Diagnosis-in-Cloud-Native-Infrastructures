@@ -26,10 +26,13 @@ def create_app(settings: Settings | None = None, pipeline=None) -> Flask:
     # Flask would otherwise buffer the whole body before our own size check.
     app.config["MAX_CONTENT_LENGTH"] = settings.max_upload_bytes
 
+    # /healthz is included because the browser reads it too: the panel shows
+    # whether this service has a model configured, and a cross-origin fetch
+    # without CORS headers is invisible to it.
     CORS(
         app,
-        resources={r"/convert": {"origins": settings.origins()}},
-        methods=["POST", "OPTIONS"],
+        resources={r"/convert": {"origins": settings.origins()}, r"/healthz": {"origins": settings.origins()}},
+        methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
