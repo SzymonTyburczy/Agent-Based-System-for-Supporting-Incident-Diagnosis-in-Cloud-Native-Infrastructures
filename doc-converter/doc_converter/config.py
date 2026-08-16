@@ -1,5 +1,7 @@
-"""Central configuration, mirroring agent-core's pydantic-settings idiom so
-the two services are configured the same way.
+"""Settings, read from the environment or an optional .env file.
+
+Every value has a working default, so the service runs with no configuration
+at all. See README.md for the table.
 """
 
 from __future__ import annotations
@@ -13,44 +15,39 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     host: str = "0.0.0.0"
-    # 8080/8081/8000/8090/9090/9093 are taken by the observability stack and
-    # agent-core, 5173 by the Vite dev server.
+    # 8000/8080/8081/8090/9090/9093 belong to the observability stack and
+    # agent-core, 5173 to the Vite dev server.
     port: int = 5001
 
-    # Mirrors the client's own MAX_FILE_SIZE_BYTES (converter.ts) so a file
-    # the browser accepts is never rejected here for a different reason.
+    # Mirrors the client's own MAX_FILE_SIZE_BYTES, so a file the browser
+    # accepts is never rejected here for a different reason.
     max_upload_bytes: int = 15 * 1024 * 1024
 
-    # Bearer token the client must send. Empty = no auth check, matching
-    # agent-core's CLIENT_API_TOKEN behaviour.
+    # Empty = no auth check, matching agent-core's CLIENT_API_TOKEN.
     api_token: str = ""
-
-    # Comma-separated CORS allowlist. Empty = allow any origin (dev default).
     allowed_origins: str = "http://localhost:5173"
 
-    # Where Docling's model weights live. Set this (and pre-fetch with
-    # scripts/prefetch_models.py) to make the service work with no network at
-    # all; leaving it empty lets Docling download to its own cache on first use.
+    # Pre-fetched Docling weights. Empty = let Docling download to its own
+    # cache on first use.
     models_dir: str = ""
 
-    # OCR costs ~62MB of RapidOCR weights plus real time per page, and only
-    # pays off for scanned documents. Off by default — turn it on if scans
-    # are in scope.
     enable_ocr: bool = False
-
-    # Restores line breaks and indentation inside code/YAML blocks, but pulls
-    # the 611MB CodeFormulaV2 model and costs ~150x the conversion time
-    # (measured: 0.5s -> 74.7s on a one-page runbook). Off by default; the
-    # supported way to get faithful YAML is to submit it as Markdown, which
-    # the client's passthrough branch already handles.
+    # Restores line breaks inside code blocks, but pulls a 611 MB model and
+    # costs ~150x the conversion time. See README.
     enable_code_enrichment: bool = False
-
-    # Hard ceiling per document, so one pathological PDF cannot pin the
-    # single worker forever.
     conversion_timeout_seconds: int = 120
 
+    # Optional figure descriptions. The only setting that involves a model
+    # outside this machine — and only for pictures, never for layout or
+    # tables. The endpoint is OpenAI-compatible, so any provider works.
+    enable_picture_description: bool = False
+    vlm_api_url: str = "http://localhost:11434/v1/chat/completions"
+    vlm_api_key: str = ""
+    vlm_model: str = "llava"
+    vlm_prompt: str = "Describe this figure in two sentences, for a technical knowledge base."
+    vlm_timeout_seconds: float = 60.0
+
     def origins(self) -> list[str] | str:
-        """CORS origins for flask-cors: a list, or "*" when unrestricted."""
         origins = [item.strip() for item in self.allowed_origins.split(",") if item.strip()]
         return origins or "*"
 

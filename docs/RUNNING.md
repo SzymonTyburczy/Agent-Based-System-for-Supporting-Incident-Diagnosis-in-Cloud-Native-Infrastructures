@@ -106,8 +106,7 @@ cd doc-converter
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"        # ~1.3 GB — Docling pulls torch
-cp .env.example .env
-python -m doc_converter.app
+python -m doc_converter.app    # no configuration needed
 ```
 
 First start loads the conversion models (60–110 s) before it listens. Confirm

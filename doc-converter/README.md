@@ -1,163 +1,142 @@
-# doc-converter — lokalna konwersja dokumentów do Markdown
+# doc-converter
 
-Serwis konwertujący PDF-y do Markdown na potrzeby bazy wiedzy RAG. Zastępuje
-dotychczasową konwersję przez Google Gemini wykonywaną **w przeglądarce**.
+Converts uploaded PDFs to Markdown for the RAG knowledge base. Runs locally —
+no API key, no document leaves the machine.
 
-## Po co on powstał
+Replaces the previous browser-side Google Gemini call, which compiled
+`VITE_GEMINI_API_KEY` into the public JS bundle and sent internal runbooks to a
+third party.
 
-Wcześniej klient wysyłał PDF prosto do Gemini z poziomu przeglądarki. Miało to
-trzy konsekwencje, z których każda sama w sobie uzasadnia tę zmianę:
-
-1. **`VITE_GEMINI_API_KEY` trafiał do publicznego bundla JS** — każdy użytkownik
-   panelu widział klucz (ostrzega o tym `client/README.md`).
-2. **Dokumenty wychodziły poza infrastrukturę.** Runbooki i post-mortemy to
-   wewnętrzna dokumentacja operacyjna; wysyłanie ich do zewnętrznego dostawcy
-   jest osobnym problemem od kosztów i limitów.
-3. Limity i błędy dostawcy trzeba było obchodzić po stronie frontu (retry z
-   backoffem 1s/2s/4s) — kod, który teraz znika.
-
-Serwis rozwiązuje wszystkie trzy: konwersja dzieje się lokalnie, klucz nie jest
-potrzebny, a dokument nie opuszcza maszyny.
-
-## Silnik: Docling
+## Engine
 
 [Docling](https://github.com/docling-project/docling) (MIT, IBM Research → LF AI
-& Data, OpenSSF Best Practices 100%, [arXiv:2408.09869](https://arxiv.org/abs/2408.09869)).
+& Data). Its models are small local vision models for page layout and table
+structure — not LLMs — so conversion needs no key and no network.
 
-Wybrany, bo jako jedyny z rozważanych narzędzi odtwarza **strukturę**, a nie
-tylko tekst. Zmierzone na runbooku z tabelą eskalacji i blokiem PromQL:
+Measured on a runbook with an escalation table and a PromQL block:
 
-| | nagłówki ATX | tabela GFM |
+| | ATX headings | GFM table |
 |---|---|---|
-| Docling | 6 | 4 kolumny, komórka w komórkę |
-| MarkItDown | 0 | rozsypana w luźne linie |
+| Docling | 6 | 4 columns, cell-perfect |
+| MarkItDown | 0 | scattered into loose lines |
 
-MarkItDown odpadł nie z gustu, tylko architektonicznie: jego konwerter PDF nie
-zawiera ścieżki kodu zdolnej wyprodukować nagłówek ani blok kodu. Podpięcie do
-niego LLM-a tego nie zmienia — LLM opisuje tam obrazki, nie odtwarza układu
-strony.
+MarkItDown's PDF converter has no code path that can emit a heading or a code
+fence, so an LLM key would not have closed the gap.
 
-**Docling nie używa żadnego LLM-a ani klucza API.** Jego modele to małe modele
-wizyjne do analizy układu strony i struktury tabel:
-
-| model | rozmiar | rola |
-|---|---|---|
-| layout-heron | 164 MB | co jest nagłówkiem, akapitem, tabelą, listą |
-| TableFormer | 342 MB | która komórka do którego wiersza i kolumny |
-| RapidOCR | 61 MB | OCR skanów (opcjonalny, `ENABLE_OCR`) |
-
-### Znane ograniczenie: wielolinijkowy kod i YAML
-
-Docling poprawnie wykrywa i ofencowuje blok kodu, ale **spłaszcza go do jednej
-linii**. Blok PrometheusRule wychodzi jako `groups: - name: pod-health rules: -
-alert: …`, co jako YAML jest bezwartościowe. Nic przy tym nie zgłasza błędu —
-tabela obok jest idealna, nagłówki czyste — więc problem jest **cichy** i
-wyjdzie dopiero jako złe odpowiedzi RAG-a.
-
-`ENABLE_CODE_ENRICHMENT=true` to naprawia, ale kosztuje 611 MB modelu i ~150×
-czasu konwersji (zmierzone: 0,5 s → 74,7 s na jedną stronę). Dlatego domyślnie
-jest wyłączone, a **obowiązująca zasada brzmi: runbooki, które piszemy sami,
-wchodzą jako Markdown, nigdy jako PDF.** Ścieżka passthrough w kliencie daje dla
-nich bajt w bajt poprawny YAML, a ten serwis odrzuca `.md`/`.txt` z kodem 415,
-żeby nikt jej przypadkiem nie ominął.
-
-## Uruchomienie
+## Run
 
 ```bash
-cd doc-converter
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"            # ~1,3 GB, kilka minut (torch i spółka)
-
-cp .env.example .env               # domyślne wartości są sensowne lokalnie
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"          # ~1.3 GB; Docling pulls torch
 python -m doc_converter.app
 ```
 
-Pierwsze uruchomienie ładuje modele (60–110 s) — dzieje się to przy starcie, nie
-przy pierwszym żądaniu użytkownika. Sprawdzenie: `curl http://localhost:5001/healthz`.
+No configuration needed — every setting has a working default. The first start
+loads the models (60–110 s) before it listens; `curl localhost:5001/healthz`
+confirms it is up.
 
-### Tryb w pełni offline
+### Offline
 
-Domyślnie Docling dociąga wagi przy pierwszym użyciu. Żeby serwis działał bez
-sieci (i żeby dało się go odtworzyć za dwa lata), pobierz je raz do katalogu:
-
-```bash
-# w .env: MODELS_DIR=./models
-python scripts/prefetch_models.py
-```
-
-Ściąga ~510 MB (bez OCR) zamiast domyślnych ~1,37 GB — pomija modele, których
-ten serwis nigdy nie włącza. Weryfikacja:
+Docling downloads its weights on first use. To bake them in instead:
 
 ```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m doc_converter.app
+docling-tools models download -o ./models layout tableformer   # ~510 MB
+echo "MODELS_DIR=./models" >> .env
 ```
+
+Verified with `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`: the service starts and
+converts with no network at all.
 
 ## API
 
-### `POST /convert`
-
-`multipart/form-data`, pole `file`. Nagłówek `Authorization: Bearer <API_TOKEN>`
-tylko jeśli `API_TOKEN` jest ustawiony.
+**`POST /convert`** — `multipart/form-data`, field `file`. Send
+`Authorization: Bearer <API_TOKEN>` only if `API_TOKEN` is set.
 
 ```bash
-curl -X POST http://localhost:5001/convert \
-  -H "Authorization: Bearer $API_TOKEN" \
-  -F "file=@runbook.pdf"
+curl -X POST localhost:5001/convert -F "file=@runbook.pdf"
 ```
 
 ```json
 { "markdown": "## Runbook…", "pages": 3, "engine": "docling", "duration_ms": 828 }
 ```
 
-| kod | znaczenie |
+| Code | Meaning |
 |---|---|
-| `400` | brak pola `file` |
-| `401` | zły lub brakujący token |
-| `413` | plik ponad `MAX_UPLOAD_BYTES` (domyślnie 15 MB, tyle co limit klienta) |
-| `415` | to nie jest PDF — sprawdzane po nagłówku pliku, nie po rozszerzeniu |
-| `422` | PDF się otworzył, ale nie dało się wyciągnąć treści (np. skan przy `ENABLE_OCR=false`) |
+| `400` | no `file` field |
+| `401` | wrong or missing token |
+| `413` | over `MAX_UPLOAD_BYTES` |
+| `415` | not a PDF — checked by file header, not extension |
+| `422` | the PDF opened but yielded almost no text (e.g. a scan with OCR off) |
 
-### `GET /healthz`
+**`GET /healthz`** — `{"status":"ok","engine":"docling","ocr":false,…}`
 
-```json
-{ "status": "ok", "engine": "docling", "ocr": false }
-```
+## Configuration
 
-## Konfiguracja
+Environment variables, or a `.env` file in this directory.
 
-Wszystkie zmienne opisane w [`.env.example`](.env.example). Najważniejsze:
-`API_TOKEN`, `ALLOWED_ORIGINS`, `MODELS_DIR`, `ENABLE_OCR`,
-`ENABLE_CODE_ENRICHMENT`.
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `5001` | every other port is taken by the rest of the stack |
+| `API_TOKEN` | empty | bearer token; empty disables the check |
+| `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS allowlist |
+| `MAX_UPLOAD_BYTES` | `15728640` | mirrors the client's own 15 MB cap |
+| `MODELS_DIR` | empty | pre-fetched weights, for offline use |
+| `ENABLE_OCR` | `false` | for scanned PDFs; +62 MB and slower per page |
+| `ENABLE_CODE_ENRICHMENT` | `false` | see the limitation below |
+| `CONVERSION_TIMEOUT_SECONDS` | `120` | per document |
 
-## Testy
+### Optional: describe figures with a vision model
+
+The only setting that involves a model outside this machine, and it only
+affects **pictures** — never layout, headings or tables. Off by default; with
+it off, figures are simply skipped and everything else is identical.
+
+| Variable | Default |
+|---|---|
+| `ENABLE_PICTURE_DESCRIPTION` | `false` |
+| `VLM_API_URL` | `http://localhost:11434/v1/chat/completions` |
+| `VLM_API_KEY` | empty |
+| `VLM_MODEL` | `llava` |
+
+The endpoint is OpenAI-compatible, so the provider is the user's choice: Ollama
+locally with no key, or OpenAI with one. An empty key sends no `Authorization`
+header at all.
+
+## Known limitation: multi-line code and YAML
+
+Docling detects and fences code blocks but **flattens them onto one line**. A
+PrometheusRule comes out as `groups: - name: pod-health rules: - alert: …`,
+which is not valid YAML. Nothing errors — the table beside it is perfect — so
+this is silent and would surface much later as bad RAG answers.
+
+`ENABLE_CODE_ENRICHMENT=true` fixes it, but pulls a 611 MB model and costs
+~150× the conversion time (0.5 s → 74.7 s for one page).
+
+**The standing rule instead: runbooks we author go in as Markdown, never as
+PDF.** The client passes `.md`/`.txt` through untouched, and this service
+rejects them with `415` so nobody bypasses that path by accident.
+
+## Tests
 
 ```bash
 pytest -q
 ```
 
-22 testy, wszystkie bez ładowania Doclinga — `validate_upload` jest czyste, a
-warstwa HTTP dostaje podstawiony pipeline. Dzięki temu suite chodzi w 0,2 s i
-nie wymaga pobranych modeli.
+16 tests, none of which load Docling: `validate_upload` is pure and the HTTP
+layer takes an injected pipeline, so the suite runs in 0.2 s with no models on
+disk.
 
-## Decyzje projektowe
+## Design notes
 
-- **Flask, nie FastAPI**, mimo że `agent-core` stoi na FastAPI. Ten serwis ma
-  jeden endpoint konwersji i healthcheck; Flask wystarcza i jest prostszy.
-  Świadomy koszt: dwa frameworki webowe w jednym repo.
-- **Osobny serwis, nie moduł w `agent-core`.** `webhook_server.py` nie wstaje,
-  gdy `MCP_GRAFANA_URL` jest nieosiągalny — dokładanie tam konwersji oznaczałoby,
-  że dodawanie runbooka przestaje działać, gdy leży stack obserwowalności. Poza
-  tym `agent-core` ma sześć czysto pythonowych zależności i dokładanie do tego
-  drzewa torcha zniszczyłoby tę własność.
-- **Proces hosta, nie kontener w klastrze.** Docling przy 8 stronach bierze
-  ~3,4 GB RSS; najbliższy analog w Waszym Helmie (`grafana-mcp`) ma limit
-  150 Mi, a oficjalne manifesty Doclinga proszą o 4 Gi i GPU. Na laptopie ze
-  stackiem obserwowalności to się nie mieści.
-- **Jeden wątek (`threaded=False`).** Jedna konwersja naraz — równoległe
-  żądania zwielokrotniłyby zużycie pamięci.
-- **`allowed_formats=[InputFormat.PDF]`** — to zabezpieczenie, nie porządki:
-  usuwa ścieżki parsowania HTML, LaTeX i XML, w których historycznie siedziały
-  CVE Doclinga.
-- **Format pliku sprawdzany po magic bytes**, nie po rozszerzeniu ani po
-  `Content-Type` z przeglądarki.
+- **Flask, not FastAPI** as in `agent-core` — one endpoint does not need more.
+  The cost is two web frameworks in one repo.
+- **Separate service, not part of `agent-core`**, whose `webhook_server.py`
+  refuses to start when the observability stack is down. Adding a runbook
+  should not depend on that. It also keeps torch out of `agent-core`'s six
+  pure-Python dependencies.
+- **Host process, not a cluster pod.** Docling peaks around 3.4 GB RSS on 8
+  pages; the closest Helm analogue in this repo caps at 150 Mi, and Docling's
+  own manifests ask for 4 Gi and a GPU.
+- **Single-threaded** for the same reason.
+- **`allowed_formats=[InputFormat.PDF]`** drops the HTML, LaTeX and XML parsing
+  paths where Docling's CVEs have lived.
