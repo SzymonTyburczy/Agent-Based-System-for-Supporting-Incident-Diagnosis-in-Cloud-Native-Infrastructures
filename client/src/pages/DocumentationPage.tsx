@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Check, Copy, Send } from "lucide-react";
+import { Check, Send } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { UploadZone, type UploadStatus } from "../components/UploadZone";
@@ -21,7 +21,7 @@ import {
 import { useTransientFlag } from "../hooks/useTransientFlag";
 import type { DocumentPayload, SourceFormat } from "../lib/types";
 
-type RightTab = "preview" | "json";
+type RightTab = "preview" | "edit";
 
 export function DocumentationPage() {
   const [draft] = useState(() => loadDocDraft());
@@ -40,7 +40,6 @@ export function DocumentationPage() {
   );
   const [error, setError] = useState("");
   const [rightTab, setRightTab] = useState<RightTab>("preview");
-  const { flag: copied, trigger: markCopied } = useTransientFlag(1500);
   const { flag: sent, trigger: markSent, clear: clearSent } = useTransientFlag(2500);
   // Guards against a slow conversion resolving after a newer one started.
   const conversionId = useRef(0);
@@ -93,13 +92,6 @@ export function DocumentationPage() {
     [markdown, author, date],
   );
 
-  // Serializing a multi-MB document on every keystroke is wasted work while the
-  // JSON tab is hidden — compute only when it is actually displayed.
-  const payloadJson = useMemo(
-    () => (rightTab === "json" ? JSON.stringify(payload, null, 2) : ""),
-    [payload, rightTab],
-  );
-
   const reset = () => {
     conversionId.current++;
     setStatus("idle");
@@ -111,15 +103,6 @@ export function DocumentationPage() {
     setDate(new Date());
     clearSent();
     clearDocDraft();
-  };
-
-  const copyJson = async () => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-      markCopied();
-    } catch {
-      setError("Could not copy to the clipboard. Copy the JSON manually from the panel.");
-    }
   };
 
   const canSubmit = status === "ready" && markdown.trim().length > 0 && author.trim().length > 0;
@@ -138,7 +121,7 @@ export function DocumentationPage() {
       <div className="shrink-0">
         <PageHeader
           title="Documentation"
-          description="Add documentation (PDF or Markdown) to the RAG knowledge base. PDF files are automatically converted to Markdown with Google Gemini."
+          description="Add documentation (PDF or Markdown) to the RAG knowledge base. PDFs are converted to Markdown locally, by the doc-converter service."
         />
       </div>
 
@@ -218,11 +201,11 @@ export function DocumentationPage() {
           </div>
         </div>
 
-        {/* Right column: preview / JSON (only this panel scrolls) */}
+        {/* Right column: preview / editor (only this panel scrolls) */}
         <div className="card flex min-h-0 flex-col lg:h-full lg:w-1/2">
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
             <div className="flex gap-1">
-              {(["preview", "json"] as RightTab[]).map((tab) => (
+              {(["preview", "edit"] as RightTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setRightTab(tab)}
@@ -234,25 +217,26 @@ export function DocumentationPage() {
                       : "text-[var(--color-muted)] hover:text-white",
                   ].join(" ")}
                 >
-                  {tab === "preview" ? "Preview" : "JSON payload"}
+                  {tab === "preview" ? "Preview" : "Edit"}
                 </button>
               ))}
             </div>
-            {rightTab === "json" && (
-              <button onClick={copyJson} className="btn-secondary">
-                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? "Copied" : "Copy"}
-              </button>
+            {rightTab === "edit" && status === "ready" && (
+              <span className="text-[11px] text-[var(--color-muted)]">
+                {markdown.length.toLocaleString()} characters
+              </span>
             )}
           </div>
 
-          <div className="min-h-[420px] flex-1 overflow-auto p-5 lg:min-h-0">
-            {rightTab === "preview" ? (
-              status !== "ready" ? (
-                <div className="flex h-full items-center justify-center text-sm text-[var(--color-muted)]">
-                  Add a file to see the preview.
-                </div>
-              ) : sourceFormat === "text" ? (
+          <div className="flex min-h-[420px] flex-1 flex-col overflow-auto p-5 lg:min-h-0">
+            {status !== "ready" ? (
+              <div className="flex h-full items-center justify-center text-sm text-[var(--color-muted)]">
+                Add a file to see the {rightTab === "edit" ? "document" : "preview"}.
+              </div>
+            ) : rightTab === "preview" ? (
+              // .txt is not Markdown — rendering it as such would invent
+              // structure the author never wrote.
+              sourceFormat === "text" ? (
                 <pre className="text-sm leading-relaxed break-words whitespace-pre-wrap text-[#e6ebf3]">
                   {markdown}
                 </pre>
@@ -260,9 +244,18 @@ export function DocumentationPage() {
                 <MarkdownPreview content={markdown} />
               )
             ) : (
-              <pre className="text-xs leading-relaxed break-words whitespace-pre-wrap text-[var(--color-muted)]">
-                <code>{payloadJson}</code>
-              </pre>
+              // Edits go straight into the state the payload is built from, so
+              // what you see here is what gets sent — and the draft in
+              // localStorage keeps them across a refresh. This is also the
+              // repair path for the one thing the converter gets wrong:
+              // multi-line YAML and code blocks arrive flattened onto one line.
+              <textarea
+                value={markdown}
+                onChange={(event) => setMarkdown(event.target.value)}
+                spellCheck={false}
+                aria-label="Markdown content"
+                className="min-h-[420px] w-full flex-1 resize-none bg-transparent font-mono text-xs leading-relaxed text-[#e6ebf3] outline-none lg:min-h-0"
+              />
             )}
           </div>
         </div>

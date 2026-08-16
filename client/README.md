@@ -7,8 +7,10 @@ Diagnosis in Cloud-Native Infrastructures_.
 
 - **Documentation** (main view) — add documents to the RAG knowledge base via _drag & drop_
   or a file picker. Supported formats:
-  - **PDF** → automatically converted to Markdown with **Google Gemini** (max 15 MB).
+  - **PDF** → converted to Markdown by the local **doc-converter** service (max 15 MB).
   - **Markdown / plain text** (`.md`, `.markdown`, `.mdx`, `.txt`) → no conversion (passthrough).
+  - The converted Markdown is **editable by hand before sending** (Preview / Edit tabs) —
+    useful when the converter flattens a code block, or a section simply is not wanted.
   - After processing, a JSON payload is built for submission:
     ```json
     { "data": "<date yyyy-MM-dd>", "autor": "<author>", "tresc": "<markdown>" }
@@ -26,8 +28,8 @@ Diagnosis in Cloud-Native Infrastructures_.
   "Mark resolved"/"Reopen" action and a "Copy Markdown" button that yields the agent's
   own Markdown rendering of the report.
 - **Dashboard** — shortcuts and issue counts, also sourced live from `agent-core`.
-- **Settings** — Gemini model selection and the default document author. The API key is
-  configured exclusively via `.env` (see below), not from the UI.
+- **Settings** — the default document author. Conversion and model settings belong to the
+  `doc-converter` service, not to this panel.
 
 ## Getting started
 
@@ -40,21 +42,23 @@ The Issues and Dashboard views need `agent-core`'s webhook server running and re
 (see `VITE_AGENT_API_URL` below) — without it they'll show a connection error rather than
 data.
 
-## Gemini configuration
+## Document converter
 
-PDF conversion requires a Google Gemini API key. The repository ships `client/.env` with an
-empty value — paste your key there and restart the dev server:
+PDF conversion is done by [`doc-converter`](../doc-converter/README.md), a local service — no
+API key lives in this app. Point the client at it:
 
 ```
-VITE_GEMINI_API_KEY=<your key>
+VITE_CONVERTER_URL=http://localhost:5001
+VITE_CONVERTER_TOKEN=<only if API_TOKEN is set on the service>
 ```
 
-Get a key in [Google AI Studio](https://aistudio.google.com/apikey) (free tier, no GCP needed).
+The sidebar shows whether the service has an optional vision model configured; clicking it
+explains where that key goes (the service's own `.env`, never here).
 
 ## Diagnostic agent configuration
 
 The Issues and Dashboard views read from `agent-core`'s webhook server. Add these to
-`client/.env` alongside the Gemini key:
+`client/.env`:
 
 ```
 VITE_AGENT_API_URL=http://localhost:8090
@@ -82,11 +86,9 @@ VITE_AGENT_API_TOKEN=<only if agent-core was started with CLIENT_API_TOKEN set>
 ## Stack
 
 React 19, React Router, TanStack Query, Tailwind CSS v4, react-dropzone,
-react-markdown + remark-gfm,
-`@google/genai`, date-fns, lucide-react, vitest.
+react-markdown + remark-gfm, date-fns, lucide-react, vitest.
 
-> Note: `VITE_*` variables are compiled into the public JS bundle — every key here (Gemini,
-> and the agent API token if set) is visible to every user of the browser app. That's
-> acceptable for a local development tool, but such a build **must not be hosted publicly**.
-> In production, both the Gemini conversion and the agent API calls should move behind a
-> backend/proxy so no key is ever exposed client-side.
+> Note: `VITE_*` variables are compiled into the public JS bundle, so anything set here is
+> visible to every user of the browser app. No model key is configured client-side any more —
+> that moved to the `doc-converter` service — but the service tokens, if set, still are. For a
+> publicly hosted build they should move behind a proxy.

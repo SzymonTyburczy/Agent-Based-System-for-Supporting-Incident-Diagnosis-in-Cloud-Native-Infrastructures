@@ -1,13 +1,6 @@
 const STORAGE_KEYS = {
-  geminiModel: "idar.geminiModel",
   defaultAuthor: "idar.defaultAuthor",
 } as const;
-
-export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
-
-export function getGeminiApiKey(): string {
-  return (import.meta.env.VITE_GEMINI_API_KEY ?? "").trim();
-}
 
 export function getAgentApiUrl(): string {
   return (import.meta.env.VITE_AGENT_API_URL ?? "").trim().replace(/\/+$/, "");
@@ -17,12 +10,13 @@ export function getAgentApiToken(): string {
   return (import.meta.env.VITE_AGENT_API_TOKEN ?? "").trim();
 }
 
-export function getGeminiModel(): string {
-  return localStorage.getItem(STORAGE_KEYS.geminiModel) || DEFAULT_GEMINI_MODEL;
+/** Base URL of the local doc-converter service (see doc-converter/README.md). */
+export function getConverterUrl(): string {
+  return (import.meta.env.VITE_CONVERTER_URL ?? "").trim().replace(/\/+$/, "");
 }
 
-export function setGeminiModel(value: string): void {
-  localStorage.setItem(STORAGE_KEYS.geminiModel, value.trim() || DEFAULT_GEMINI_MODEL);
+export function getConverterToken(): string {
+  return (import.meta.env.VITE_CONVERTER_TOKEN ?? "").trim();
 }
 
 export function getDefaultAuthor(): string {

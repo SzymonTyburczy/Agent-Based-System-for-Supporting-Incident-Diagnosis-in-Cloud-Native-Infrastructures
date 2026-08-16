@@ -1,12 +1,19 @@
 # Running the full project locally
 
-This project has three pieces that need to run together:
+This project has four pieces; three of them need to run together:
 
 ```
 example-infrastructure  →  agent-core  →  client
   (Prometheus, Alertmanager,   (diagnostic agent,   (web panel, reads
    Grafana, mcp-grafana)        FastAPI server)       agent-core's API)
+
+                        doc-converter  →  client
+                   (PDF → Markdown, local)   (Documentation view)
 ```
+
+`doc-converter` is independent of the other three: nothing else calls it, and
+it needs neither the cluster nor the agent. Start it only when you want to add
+documents to the knowledge base.
 
 Alerts flow **infra → agent-core** (via webhook or MCP), and reports flow
 **agent-core → client** (via REST + SSE). Start them in that order — each
@@ -77,9 +84,10 @@ git update-index --skip-worktree .env
 ```
 
 ```
-VITE_GEMINI_API_KEY=<your Gemini key>
 VITE_AGENT_API_URL=http://localhost:8090
 VITE_AGENT_API_TOKEN=<only if CLIENT_API_TOKEN is set in agent-core/.env>
+VITE_CONVERTER_URL=http://localhost:5001
+VITE_CONVERTER_TOKEN=<only if API_TOKEN is set in doc-converter/.env>
 ```
 
 ```bash
@@ -89,6 +97,23 @@ npm run dev
 Open the printed URL (usually `http://localhost:5173`) and go to
 `/issues` — it should load without a connection error (an empty list is
 fine if no incidents have fired yet).
+
+## 4. Start the document converter
+
+Needed for the Documentation view's PDF upload; the rest of the app works without it.
+
+```bash
+cd doc-converter
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"        # ~1.3 GB — Docling pulls torch
+python -m doc_converter.app    # no configuration needed
+```
+
+First start loads the conversion models (60–110 s) before it listens. Confirm
+with `curl http://localhost:5001/healthz` → `{"status":"ok","engine":"docling",…}`.
+See [`doc-converter/README.md`](../doc-converter/README.md) for the fully
+offline setup and the known limitation around multi-line code blocks.
 
 ## Environment variables
 
@@ -113,17 +138,25 @@ fine if no incidents have fired yet).
 | `CLIENT_API_TOKEN` | empty | bearer token (or `?token=`) required on `/reports*`; empty = no check |
 | `CLIENT_ALLOWED_ORIGINS` | empty | comma-separated CORS allowlist for `/reports*`; empty = allow any origin |
 
+### `doc-converter/.env`
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HOST` / `PORT` | `0.0.0.0` / `5001` | where the converter listens |
+| `API_TOKEN` | empty | bearer token the client must send; empty = no check |
+| `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS allowlist |
+| `MODELS_DIR` | empty | pre-fetched Docling weights; set it for offline operation |
+| `ENABLE_OCR` | `false` | OCR for scanned PDFs (+62 MB of weights, slower) |
+| `MAX_UPLOAD_BYTES` | `15728640` | mirrors the client's own 15 MB cap |
+
 ### `client/.env`
 
 | Variable | Purpose |
 |---|---|
-| `VITE_GEMINI_API_KEY` | Google Gemini key, for PDF → Markdown conversion in the Documentation view |
 | `VITE_AGENT_API_URL` | base URL of `agent-core`'s `webhook_server` (e.g. `http://localhost:8090`) |
 | `VITE_AGENT_API_TOKEN` | only needed if `CLIENT_API_TOKEN` is set on the agent-core side |
-
-Never commit real values for either `.env` — both are tracked with empty
-placeholders as templates; run `git update-index --skip-worktree <path>`
-after filling in your own.
+| `VITE_CONVERTER_URL` | base URL of the `doc-converter` service (e.g. `http://localhost:5001`) |
+| `VITE_CONVERTER_TOKEN` | only needed if `API_TOKEN` is set on the doc-converter side |
 
 ## Smoke test without waiting for a real alert
 

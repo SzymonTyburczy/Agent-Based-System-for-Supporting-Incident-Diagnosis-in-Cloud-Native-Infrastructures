@@ -6,8 +6,9 @@ system in cloud-native infrastructures (IDAR).
 Main views:
 
 - **Documentation** — add documents (drag & drop / file picker, max 15 MB) to the RAG
-  knowledge base; PDF is converted to Markdown via Google Gemini, Markdown/text passes
-  through unchanged. The result is packed as JSON `{ data, autor, tresc }` (field names
+  knowledge base; PDF is converted to Markdown by the local `doc-converter` service,
+  Markdown/text passes through unchanged. The converted Markdown is editable in place
+  (Preview / Edit tabs) and the edit is what ends up in the payload. The result is packed as JSON `{ data, autor, tresc }` (field names
   are Polish per the agreed backend contract; `data` is a day-precision date, yyyy-MM-dd).
   Send currently logs the payload to the console and clears the form — no backend yet.
   The in-progress draft is persisted to localStorage.
@@ -20,12 +21,14 @@ Main views:
   `remediations`, `raw_diagnosis`), with a "Mark resolved"/"Reopen" action
   (`PATCH /reports/{id}`) and a "Copy Markdown" button.
 - **Dashboard** — issue counts from the same live `useReports` data.
-- **Settings** — Gemini model, default author; the API key comes only from
-  `VITE_GEMINI_API_KEY` in `client/.env` — it is not configurable from the UI.
+- **Settings** — default document author only. No model key is configurable from this app:
+  the converter owns its own model configuration (`doc-converter/.env`). The sidebar reports
+  what the service says about itself via its `/healthz`, and the dialog explains where the key
+  goes — it never accepts one.
 
 Conventions:
 
-- `src/lib/` — pure logic (api, reportWire, reportsCache, issueView, converter, models,
+- `src/lib/` — pure logic (api, reportWire, reportsCache, issueView, converter,
   settings, types, format); vitest tests live alongside the tested module.
 - `src/lib/api.ts` — the only place that talks to `agent-core`. Its `request()` returns
   `unknown` on purpose: `src/lib/reportWire.ts` is the single decode boundary where wire
@@ -35,7 +38,7 @@ Conventions:
   `cacheReport()`, which writes one report into both the detail and the list cache. Any
   new consumer of report data reads through `useReports` / `useIssueDetail`, not `fetch`.
 - `src/hooks/` — shared hooks (`useReports`, `useIssueDetail`, `useDocDraft`,
-  `useTransientFlag`) plus `streamContext`.
+  `useTransientFlag`, `useConverterHealth`) plus `streamContext`.
 - Shared `.card` / `.input` / `.btn-secondary` CSS component classes live in
   `src/index.css`; shared `EmptyCard` / `ErrorCard` / `StaleBanner` / `IssueMeta` live in
   `src/components/Cards.tsx`. Use them rather than re-pasting the Tailwind string.
@@ -60,9 +63,10 @@ Report rendering — standing rules:
 - Never add `rehype-raw` and never `dangerouslySetInnerHTML` to any of these five fields.
   react-markdown v10 escapes HTML by default and its `urlTransform` neutralises
   `javascript:`/`data:` hrefs — keep it that way.
-- `<main>` in `Layout` is the app's only vertical scroll container. Pages must not add
-  nested `overflow-y-auto` regions (the sole exception is the raw-diagnosis `<details>`,
-  which is a disclosure, not a scroll region).
+- `<main>` in `Layout` is the app's only vertical scroll container, with two deliberate
+  exceptions: the Documentation preview/editor panel, which is height-bounded by
+  `lg:h-full` so the upload form beside it stays put, and the raw-diagnosis `<details>`,
+  which is a disclosure rather than a scroll region.
 - The AI chat panel was removed deliberately and is postponed to the end of the project.
 
 Checks: `npm run typecheck`, `npm test`, `npm run lint`, `npm run format:check`.

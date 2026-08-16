@@ -1,9 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
 import { format } from "date-fns";
-import { getGeminiApiKey, getGeminiModel } from "./settings";
+import { getConverterToken, getConverterUrl } from "./settings";
 import type { DocumentPayload, SourceFormat } from "./types";
 
-export type ConversionEngine = "gemini" | "passthrough";
+export type ConversionEngine = "docling" | "passthrough";
 
 export interface ConversionResult {
   markdown: string;
@@ -11,7 +10,8 @@ export interface ConversionResult {
   engine: ConversionEngine;
 }
 
-// Gemini inline data is limited to ~20 MB per request; leave headroom for the base64 overhead.
+/** Mirrors doc-converter's own MAX_UPLOAD_BYTES, so an oversized file is
+ * rejected before it is uploaded rather than after. */
 export const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
 const MARKDOWN_EXTENSIONS = [".md", ".markdown", ".mdx"];
@@ -30,6 +30,10 @@ export const ACCEPTED_FILE_TYPES: Record<string, string[]> = {
 /** Backend contract uses day precision for the `data` field. */
 export const PAYLOAD_DATE_FORMAT = "yyyy-MM-dd";
 
+// A PDF page takes roughly half a second on CPU, and a long document runs into
+// minutes — this is not a network timeout, it is a compute one.
+const CONVERSION_TIMEOUT_MS = 180_000;
+
 export function detectSourceFormat(file: File): SourceFormat | null {
   const lower = file.name.toLowerCase();
   if (file.type === "application/pdf" || lower.endsWith(".pdf")) return "pdf";
@@ -40,107 +44,66 @@ export function detectSourceFormat(file: File): SourceFormat | null {
   return null;
 }
 
-async function fileToBase64(file: File): Promise<string> {
-  // FileReader encodes natively, off the JS main loop — no multi-MB intermediate
-  // strings and no UI freeze on large PDFs.
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read the file."));
-    reader.readAsDataURL(file);
-  });
-  return dataUrl.slice(dataUrl.indexOf(",") + 1);
-}
-
-const GEMINI_PROMPT = `You are a precise document converter. Convert the attached PDF file into clean Markdown.
-Rules:
-- Preserve structure: headings (#, ##, ...), lists, tables (GFM), code blocks and blockquotes.
-- Do not add your own comments, intros or summaries.
-- Do not wrap the whole response in a code block.
-- Return only the Markdown content.`;
-
-const RETRYABLE_STATUS = [429, 503];
-const MAX_RETRIES = 3;
-
-function isRetryable(err: unknown): boolean {
-  // The @google/genai ApiError carries a numeric status — prefer it over message sniffing.
-  const status = (err as { status?: unknown } | null)?.status;
-  if (typeof status === "number") {
-    return RETRYABLE_STATUS.includes(status);
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return (
-    RETRYABLE_STATUS.some((code) => new RegExp(`\\b${code}\\b`).test(message)) ||
-    /UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded|high demand/i.test(message)
-  );
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function convertPdfWithGemini(file: File): Promise<string> {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
+async function convertPdfWithService(file: File): Promise<string> {
+  const baseUrl = getConverterUrl();
+  if (!baseUrl) {
     throw new Error(
-      "Missing Gemini API key. Set VITE_GEMINI_API_KEY in client/.env and restart the dev server to convert PDF files.",
+      "VITE_CONVERTER_URL is not set — point it at the doc-converter service (see doc-converter/README.md).",
     );
   }
 
-  const ai = new GoogleGenAI({ apiKey });
-  const base64 = await fileToBase64(file);
+  const body = new FormData();
+  body.append("file", file);
+  const token = getConverterToken();
 
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const response = await ai.models.generateContent({
-        model: getGeminiModel(),
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { inlineData: { mimeType: "application/pdf", data: base64 } },
-              { text: GEMINI_PROMPT },
-            ],
-          },
-        ],
-      });
-
-      const text = (response.text ?? "").trim();
-      if (!text) {
-        throw new Error("Gemini returned no content for this PDF file.");
-      }
-      return text;
-    } catch (err) {
-      lastError = err;
-      if (attempt < MAX_RETRIES && isRetryable(err)) {
-        // Exponential backoff: 1s, 2s, 4s.
-        await delay(1000 * 2 ** attempt);
-        continue;
-      }
-      if (isRetryable(err)) {
-        throw new Error(
-          "The Gemini model is temporarily overloaded (high demand). Please try again in a moment, or pick a different model in Settings.",
-        );
-      }
-      throw err;
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/convert`, {
+      method: "POST",
+      body,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(CONVERSION_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new Error("The converter did not finish in time. Try a shorter document.");
     }
+    throw new Error(`Could not reach the document converter at ${baseUrl}. Is it running?`);
   }
 
-  throw lastError;
+  const payload = (await response.json().catch(() => null)) as {
+    markdown?: unknown;
+    error?: unknown;
+  } | null;
+
+  if (!response.ok) {
+    // The service explains every rejection it makes — too large, not a PDF,
+    // no text extracted — so its message beats a bare status code.
+    const message = typeof payload?.error === "string" ? payload.error : null;
+    throw new Error(message ?? `The converter failed with HTTP ${response.status}.`);
+  }
+
+  if (typeof payload?.markdown !== "string" || !payload.markdown.trim()) {
+    throw new Error("The converter returned an empty document.");
+  }
+  return payload.markdown;
 }
 
 /**
  * Converts any supported file to Markdown.
- * - PDF: converted via Google Gemini (requires an API key).
+ * - PDF: sent to the local doc-converter service.
  * - Markdown / plain text: returned as-is (passthrough).
+ *
+ * The passthrough is not an optimisation — it is the only way a file stays
+ * byte-exact. Docling would re-parse an already-valid Markdown document and
+ * reflow it, which is why the service refuses these formats outright.
  */
 export async function convertToMarkdown(file: File): Promise<ConversionResult> {
   const sourceFormat = detectSourceFormat(file);
 
   if (sourceFormat === "pdf") {
-    const markdown = await convertPdfWithGemini(file);
-    return { markdown, sourceFormat, engine: "gemini" };
+    const markdown = await convertPdfWithService(file);
+    return { markdown, sourceFormat, engine: "docling" };
   }
 
   if (sourceFormat) {

@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatUtcTimestamp } from "./format";
 
+// tsconfig deliberately exposes only vite/client types to src, so browser code
+// cannot reach for Node APIs. This one test needs the runtime's timezone.
+declare const process: { env: Record<string, string | undefined> };
+
 describe("formatUtcTimestamp", () => {
   const originalTz = process.env.TZ;
 

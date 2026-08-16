@@ -1,0 +1,29 @@
+[project]
+name = "doc-converter"
+version = "0.1.0"
+description = "Lokalny serwis konwersji dokumentów do Markdown dla bazy wiedzy RAG (praca inżynierska)"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.0",
+    "flask-cors>=5.0",
+    "pydantic-settings>=2.4",
+    "docling>=2.120,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+doc-converter = "doc_converter.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["doc_converter*"]
