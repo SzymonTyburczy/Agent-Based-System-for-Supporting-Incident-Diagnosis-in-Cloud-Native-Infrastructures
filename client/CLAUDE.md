@@ -7,7 +7,8 @@ Main views:
 
 - **Documentation** — add documents (drag & drop / file picker, max 15 MB) to the RAG
   knowledge base; PDF is converted to Markdown by the local `doc-converter` service,
-  Markdown/text passes through unchanged. The result is packed as JSON `{ data, autor, tresc }` (field names
+  Markdown/text passes through unchanged. The converted Markdown is editable in place
+  (Preview / Edit tabs) and the edit is what ends up in the payload. The result is packed as JSON `{ data, autor, tresc }` (field names
   are Polish per the agreed backend contract; `data` is a day-precision date, yyyy-MM-dd).
   Send currently logs the payload to the console and clears the form — no backend yet.
   The in-progress draft is persisted to localStorage.

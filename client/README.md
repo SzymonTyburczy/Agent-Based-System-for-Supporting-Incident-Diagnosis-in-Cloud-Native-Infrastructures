@@ -9,6 +9,8 @@ Diagnosis in Cloud-Native Infrastructures_.
   or a file picker. Supported formats:
   - **PDF** → converted to Markdown by the local **doc-converter** service (max 15 MB).
   - **Markdown / plain text** (`.md`, `.markdown`, `.mdx`, `.txt`) → no conversion (passthrough).
+  - The converted Markdown is **editable by hand before sending** (Preview / Edit tabs) —
+    useful when the converter flattens a code block, or a section simply is not wanted.
   - After processing, a JSON payload is built for submission:
     ```json
     { "data": "<date yyyy-MM-dd>", "autor": "<author>", "tresc": "<markdown>" }
