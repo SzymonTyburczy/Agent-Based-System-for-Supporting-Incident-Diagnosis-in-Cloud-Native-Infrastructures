@@ -4,9 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from qdrant_client import QdrantClient
 
+from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.config import Settings
 from app.rag.embeddings import EmbeddingProvider, build_embedder
+from app.rag.store import QdrantStore
 
 
 def create_app(
@@ -22,6 +24,9 @@ def create_app(
         app.state.settings = settings or Settings()
         app.state.embedder = embedder or build_embedder(app.state.settings)
         app.state.qdrant = qdrant or QdrantClient(url=app.state.settings.qdrant_url)
+        store = QdrantStore(app.state.qdrant, app.state.settings.collection_alias)
+        store.ensure_collection(app.state.embedder.model_id, app.state.embedder.dimension)
+        app.state.store = store
         yield
 
     app = FastAPI(title="IDAR RAG API", lifespan=lifespan)
@@ -32,6 +37,7 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(health_router)
+    app.include_router(documents_router)
     return app
 
 

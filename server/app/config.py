@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     embedding_model: str = "qwen3-embedding:0.6b"
     ollama_url: str = "http://localhost:11434"
     qdrant_url: str = "http://localhost:6333"
+    collection_alias: str = "kb_active"
     # Instrukcja po angielsku niezależnie od języka zapytania — zalecenie autorów
     # Qwen3-Embedding.
     query_instruction: str = (
