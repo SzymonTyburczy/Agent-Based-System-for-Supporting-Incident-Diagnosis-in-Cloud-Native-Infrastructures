@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import date
 
 from qdrant_client import QdrantClient, models
 
@@ -113,6 +114,38 @@ class QdrantStore:
             self.alias, points_selector=models.FilterSelector(filter=self._doc_filter(document_id))
         )
         return True
+
+    def query(
+        self,
+        vector: list[float],
+        *,
+        top_k: int,
+        author: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        score_threshold: float | None = None,
+    ) -> list[models.ScoredPoint]:
+        conditions: list[models.FieldCondition] = []
+        if author:
+            conditions.append(
+                models.FieldCondition(key="author", match=models.MatchValue(value=author))
+            )
+        if date_from or date_to:
+            conditions.append(
+                models.FieldCondition(
+                    key="doc_date", range=models.DatetimeRange(gte=date_from, lte=date_to)
+                )
+            )
+        result = self._client.query_points(
+            self.alias,
+            query=vector,
+            using=DENSE_VECTOR,
+            limit=top_k,
+            query_filter=models.Filter(must=conditions) if conditions else None,
+            score_threshold=score_threshold,
+            with_payload=True,
+        )
+        return result.points
 
     def list_documents(self) -> list[dict]:
         summaries: dict[str, dict] = {}
