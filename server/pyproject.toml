@@ -1,0 +1,43 @@
+[project]
+name = "server"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.141.1",
+    # Przypięte: DLL cygrpc ze świeżych wydań grpcio bywa blokowana przez
+    # Smart App Control ("Zasady kontroli aplikacji zablokowały ten plik"),
+    # zanim wheel zbuduje reputację; 1.71.0 ją ma i przechodzi.
+    "grpcio==1.71.0",
+    "langchain-ollama>=1.1.0",
+    "langchain-text-splitters>=1.1.2",
+    "pydantic-settings>=2.15.0",
+    "qdrant-client>=1.19.0",
+]
+
+[tool.uv]
+# Tylko CPython zarządzany przez uv. Python z Microsoft Store (App Execution
+# Alias) działa w kontenerze MSIX, którego polityka kontroli aplikacji blokuje
+# niepodpisane natywne DLL-e (grpc/cygrpc) — DLL load failed przy imporcie
+# qdrant_client.
+python-preference = "only-managed"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.4",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-m 'not slow and not integration'"
+markers = [
+    "slow: testy z prawdziwym modelem embeddingów (wymagają uruchomionej Ollamy)",
+    "integration: testy przeciwko Qdrantowi z docker compose",
+]
