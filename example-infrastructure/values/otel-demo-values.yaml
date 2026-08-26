@@ -85,6 +85,8 @@ opentelemetry-collector:
     kubeletMetrics:
       enabled: false
   config:
+    connectors:
+      spanmetrics: {}
     exporters:
       otlp/tempo:
         endpoint: "tempo.observability.svc.cluster.local:4317"
