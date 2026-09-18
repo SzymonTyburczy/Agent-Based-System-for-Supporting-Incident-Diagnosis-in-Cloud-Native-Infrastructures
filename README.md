@@ -17,11 +17,19 @@ The objective of this engineering thesis is to design and implement a prototype 
 4. **Report Generation**: Outputs a comprehensive diagnostic report outlining what went wrong and how to fix it.
 
 ## Repository Layout
+
+Architecture and flow diagrams: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Manual and automated tests (PowerShell and Bash): [`docs/TESTING.md`](docs/TESTING.md).
+
 - **`agent-core/`** — the diagnostic agent (Python/FastAPI): receives alerts, investigates using LLM-driven tool calls (kubectl, Grafana/LGTM via MCP), and produces the structured incident reports the client displays. Setup and details: [agent-core/README.md](agent-core/README.md).
 - **`client/`** — IDAR web panel (React + TypeScript + Vite): document ingestion for the RAG knowledge base, incident views with an AI chat panel. Setup and details: [client/README.md](client/README.md).
 - **`example-infrastructure/`** — demo cloud-native deployment with a configured observability stack.
 
 ## Validation
+
+Container builds and deployment configuration for EC2 / Kubernetes:
+[`docs/CONTAINERS.md`](docs/CONTAINERS.md).
+
 The proposed solution will be validated using predefined incident scenarios. Its effectiveness will be evaluated through an analysis of the completeness and usefulness of the generated diagnostic reports.
 
 ## Authors
@@ -32,5 +40,5 @@ This project is developed as an engineering thesis by a team of four:
 - Wojciech Pawlina
 
 > **Want to run the whole thing end-to-end?** See [`RUNNING.md`](docs/RUNNING.md) —
-> covers startup order, required environment variables for both `agent-core`
-> and `client`, and a smoke test that doesn't need a live cluster.
+> covers startup order and environment variables for `agent-core` and `client`.
+> Then follow [`TESTING.md`](docs/TESTING.md) to verify the system.

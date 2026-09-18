@@ -24,13 +24,12 @@ later piece expects the one before it to already be reachable.
 ## 1. Start the example infrastructure
 
 ```bash
-cd example-infrastructure
-./deploy-stack.sh
+./example-infrastructure/scripts/bash/deploy-stack.sh
 ```
 
 This brings up Prometheus, Alertmanager, Grafana, and the `mcp-grafana`
-MCP server. See [`example-infrastructure/README.md`](example-infrastructure/README.md)
-for exact prerequisites, ports, and how to tear it down (`./stop-stack.sh`).
+MCP server. See [`example-infrastructure/README.md`](../example-infrastructure/README.md)
+for exact prerequisites, ports, and how to tear it down (`scripts/bash/stop-stack.sh`).
 
 Confirm it's reachable before moving on:
 - Grafana MCP server: `http://localhost:8000/sse`
@@ -48,16 +47,15 @@ cp .env.example .env
 # edit .env — see "Environment variables" below
 ```
 
-Two ways to receive alerts (see `agent-core/README.md` for the full
-tradeoffs) — for local development, run **both**:
+Start the webhook API used by the web panel:
 
 ```bash
-# Terminal A: push path (Alertmanager → webhook), and the API the client reads
-uvicorn webhook_server:app --host 0.0.0.0 --port 8090
-
-# Terminal B: polling path, as a reconciliation safety net (optional)
-python main.py
+uvicorn webhook_server:app --host 127.0.0.1 --port 8090 --workers 1
 ```
+
+The separate `main.py` polling process reads Grafana-managed alerts and writes JSON
+only. It is not required for the panel and is not a complete fallback for Alertmanager.
+See [execution modes](../agent-core/README.md#execution-modes).
 
 ⚠️ `webhook_server.py` connects to `MCP_GRAFANA_URL` **on startup** and
 will not come up at all if that address isn't reachable — start the
@@ -69,11 +67,9 @@ Confirm it's up: `curl http://localhost:8090/healthz` → `{"status":"ok"}`.
 
 ```bash
 cd client
-npm install
+npm ci
 
-# client/.env is tracked with empty placeholders — fill in your values,
-# then tell git to ignore your local changes:
-git update-index --skip-worktree .env
+# Configure client/.env locally; do not commit real keys.
 ```
 
 ```
@@ -104,9 +100,9 @@ fine if no incidents have fired yet).
 | `MCP_GRAFANA_TOOL_ALLOWLIST` | curated ~20-tool list | which MCP tools get registered (avoids TPM rate limits) |
 | `KUBECTL_ALLOWED_NAMESPACES` | `otel-demo` | empty = no restriction |
 | `AGENT_MAX_ITERATIONS` | `12` | ReAct loop step budget per investigation |
-| `AGENT_POLL_INTERVAL_SECONDS` | `60` | `main.py` only; set 300+ if `webhook_server.py` also runs |
+| `AGENT_POLL_INTERVAL_SECONDS` | `60` | `main.py` only; controls the polling interval |
 | `AGENT_RUN_ONCE` | `false` | `main.py` only; one investigation then exit, for smoke tests |
-| `WEBHOOK_HOST` / `WEBHOOK_PORT` | `0.0.0.0` / `8090` | where `webhook_server.py` listens |
+| `WEBHOOK_HOST` / `WEBHOOK_PORT` | `0.0.0.0` / `8090` in `.env.example` | read by the Docker startup command; direct Uvicorn invocation uses its CLI flags |
 | `WEBHOOK_SHARED_SECRET` | empty | bearer token Alertmanager must send to `/alerts/webhook`; empty = no check |
 | `REPORT_OUTPUT_DIR` | `./reports` | immutable per-investigation JSON files |
 | `REPORTS_DB_PATH` | `./reports/reports.db` | mutable status store the client's API reads from |
@@ -121,43 +117,12 @@ fine if no incidents have fired yet).
 | `VITE_AGENT_API_URL` | base URL of `agent-core`'s `webhook_server` (e.g. `http://localhost:8090`) |
 | `VITE_AGENT_API_TOKEN` | only needed if `CLIENT_API_TOKEN` is set on the agent-core side |
 
-Never commit real values for either `.env` — both are tracked with empty
-placeholders as templates; run `git update-index --skip-worktree <path>`
-after filling in your own.
+Never commit real values from either `.env`. Frontend `VITE_*` values are public
+in the browser bundle; keep this development setup private.
 
-## Smoke test without waiting for a real alert
+## Testing
 
-Once `webhook_server.py` is up, simulate an Alertmanager webhook directly:
-
-```bash
-curl -X POST http://localhost:8090/alerts/webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "status": "firing",
-    "groupLabels": {"alertname": "HighErrorRate", "service": "checkout-service", "severity": "critical"},
-    "alerts": [{
-      "status": "firing",
-      "labels": {"alertname": "HighErrorRate", "service": "checkout-service", "severity": "critical", "pod": "checkout-1"},
-      "annotations": {"summary": "Checkout error rate above 5%"},
-      "startsAt": "2026-07-27T10:00:00Z"
-    }]
-  }'
-```
-
-You should get `{"status":"queued"}` back, and — once the agent finishes
-investigating — the new issue should appear on the client's `/issues` page
-on its own, without a page refresh (that's the SSE stream at work).
-
-## Troubleshooting
-
-- **`webhook_server.py` won't start at all** — almost always `MCP_GRAFANA_URL`
-  unreachable. Confirm the infrastructure (step 1) is actually up first.
-- **Client shows a connection error on `/issues`** — check `VITE_AGENT_API_URL`
-  points at a running `webhook_server.py`, and that `CLIENT_ALLOWED_ORIGINS`
-  (if set) includes the client's actual origin.
-- **`401` from `/reports*`** — `CLIENT_API_TOKEN` is set on the agent side but
-  `VITE_AGENT_API_TOKEN` is missing/wrong on the client side (or vice versa).
-- **Issues never appear even though the webhook returns `"queued"`** — the
-  investigation is still running (can take up to ~a minute depending on the
-  LLM and how many tool calls it needs); check the `webhook_server.py`
-  terminal output for progress or errors.
+See [TESTING.md](TESTING.md) for manual webhook tests, expected results, persistence
+and SSE checks, automated tests, and troubleshooting in PowerShell and Bash.
+Live diagnosis requires MCP, a monitored cluster, and an LLM provider; unit tests
+use mocks and do not require those services.
