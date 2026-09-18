@@ -193,7 +193,8 @@ to the browser console rather than ingesting it into a RAG backend. The chat pan
 has been removed; RAG-backed chat remains future work. PDF conversion uses the
 local `doc-converter` service with Docling. Default conversion does not use an LLM
 API or send documents to an external provider. Optional figure descriptions can use
-a separately configured model endpoint. Models must be downloaded before offline use.
+a separately configured model endpoint. The Docker image contains the default models;
+host-process installations must download them before offline use.
 Markdown/text preparation can be tested without the converter. See the
 [converter README](../doc-converter/README.md) for model setup and code-block limitations.
 

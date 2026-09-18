@@ -263,9 +263,10 @@ result using the Edit tab. Confirm the converter status is online. Markdown/text
 uploads should work even without the converter. **Send** still logs a payload rather
 than persisting documents to a RAG backend.
 
-The initial start may download model weights. An image-only PDF can return 422 with
-OCR disabled; multi-line code formatting has known limitations documented in the
-converter README. Check headings and tables as well as the HTTP status.
+The initial host-process start may download model weights; the Docker image already
+contains the default models. An image-only PDF can return 422 with OCR disabled;
+multi-line code formatting has known limitations documented in the converter README.
+Check headings and tables as well as the HTTP status.
 
 ## Automated tests without live infrastructure
 

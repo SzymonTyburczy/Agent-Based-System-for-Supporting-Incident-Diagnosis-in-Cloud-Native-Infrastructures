@@ -53,7 +53,8 @@ Once deployed and port forwarding is active, the following services are availabl
 The stack includes an official **Grafana MCP Server** (`grafana-community/grafana-mcp`) configured explicitly for safe AI diagnosis:
 
 ### Read-Only Safety Guarantee (`--disable-write: true`)
-The MCP server is configured with `disableWrite: true` in [`values/grafana-mcp-values.yaml`](file:///c:/Users/wojpa/Documents/inzynierka/Agent-Based-System-for-Supporting-Incident-Diagnosis-in-Cloud-Native-Infrastructures/example-infrastructure/values/grafana-mcp-values.yaml). AI diagnostic agents can:
+The MCP server is configured with `disableWrite: true` in
+[`values/grafana-mcp-values.yaml`](values/grafana-mcp-values.yaml). AI diagnostic agents can:
 - ✅ Discover and inspect dashboards, panels, and variables (`search_dashboards`, `get_dashboard`).
 - ✅ Execute PromQL queries against Prometheus (`query_prometheus`).
 - ✅ Execute LogQL queries against Loki logs (`query_loki_logs`, `query_loki_stats`).

@@ -42,5 +42,5 @@ This project is developed as an engineering thesis by a team of four:
 - Wojciech Pawlina
 
 > **Want to run the whole thing end-to-end?** See [`RUNNING.md`](docs/RUNNING.md) —
-> covers startup order and environment variables for `agent-core` and `client`.
+> covers startup order and environment variables for all local services.
 > Then follow [`TESTING.md`](docs/TESTING.md) to verify the system.

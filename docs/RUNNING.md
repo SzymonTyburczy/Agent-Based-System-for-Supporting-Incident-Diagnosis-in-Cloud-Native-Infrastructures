@@ -1,6 +1,7 @@
 # Running the full project locally
 
-This project has four pieces; three of them need to run together:
+This project has four pieces. The infrastructure, agent, and client form the
+incident-diagnosis flow; the client also calls the converter when a PDF is uploaded:
 
 ```
 example-infrastructure  →  agent-core  →  client
@@ -11,13 +12,14 @@ example-infrastructure  →  agent-core  →  client
                    (PDF → Markdown, local)   (Documentation view)
 ```
 
-`doc-converter` is independent of the other three: nothing else calls it, and
-it needs neither the cluster nor the agent. Start it only when you want to add
-documents to the knowledge base.
+`doc-converter` needs neither the cluster nor the agent. Start it before the client
+when you want to prepare a PDF in the Documentation view. Markdown and text files
+work without it. Document submission to a RAG backend is not implemented yet.
 
 Alerts flow **infra → agent-core** (via webhook or MCP), and reports flow
 **agent-core → client** (via REST + SSE). Start them in that order — each
 later piece expects the one before it to already be reachable.
+Run each long-lived service in a separate terminal opened at the repository root.
 
 ## Prerequisites
 
@@ -71,7 +73,25 @@ infrastructure (step 1) first.
 
 Confirm it's up: `curl http://localhost:8090/healthz` → `{"status":"ok"}`.
 
-## 3. Configure and start the client
+## 3. Start the document converter
+
+Needed for the Documentation view's PDF upload; the rest of the app works without it.
+
+```bash
+cd doc-converter
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"        # ~1.3 GB — Docling pulls torch
+python -m doc_converter.app    # no configuration needed
+```
+
+The first host-process start downloads and loads the conversion models before it
+listens. Confirm with `curl http://localhost:5001/healthz` →
+`{"status":"ok","engine":"docling",…}`. The Docker image described in
+[`doc-converter/README.md`](../doc-converter/README.md) already contains the models
+and can run offline.
+
+## 4. Configure and start the client
 
 ```bash
 cd client
@@ -94,23 +114,6 @@ npm run dev
 Open the printed URL (usually `http://localhost:5173`) and go to
 `/issues` — it should load without a connection error (an empty list is
 fine if no incidents have fired yet).
-
-## 4. Start the document converter
-
-Needed for the Documentation view's PDF upload; the rest of the app works without it.
-
-```bash
-cd doc-converter
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"        # ~1.3 GB — Docling pulls torch
-python -m doc_converter.app    # no configuration needed
-```
-
-First start loads the conversion models (60–110 s) before it listens. Confirm
-with `curl http://localhost:5001/healthz` → `{"status":"ok","engine":"docling",…}`.
-See [`doc-converter/README.md`](../doc-converter/README.md) for the fully
-offline setup and the known limitation around multi-line code blocks.
 
 ## Environment variables
 
