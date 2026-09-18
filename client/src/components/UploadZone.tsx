@@ -7,7 +7,7 @@ import type { SourceFormat } from "../lib/types";
 export type UploadStatus = "idle" | "converting" | "ready" | "error";
 
 const engineLabel: Record<ConversionEngine, string> = {
-  gemini: "Google Gemini",
+  docling: "Docling (local)",
   passthrough: "No conversion (Markdown / text)",
 };
 

@@ -21,6 +21,29 @@
     background-color: var(--color-surface);
   }
 
+  .btn-secondary {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-border);
+    padding: 0.375rem 0.625rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+    color: #fff;
+    transition: background-color 150ms;
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--color-surface-2);
+  }
+
+  .btn-secondary:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
   .input {
     width: 100%;
     border-radius: 0.5rem;

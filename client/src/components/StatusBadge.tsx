@@ -13,9 +13,12 @@ const statusLabel: Record<IssueStatus, string> = {
 
 export function StatusBadge({ status }: { status: IssueStatus }) {
   return (
+    // inline-flex, so pairing with SeverityBadge (a plain inline span) behaves
+    // identically outside a flex parent.
     <span
-      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${statusStyles[status]}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${statusStyles[status]}`}
     >
+      <span className="sr-only">Status: </span>
       <CircleDot className="h-3 w-3" />
       {statusLabel[status]}
     </span>

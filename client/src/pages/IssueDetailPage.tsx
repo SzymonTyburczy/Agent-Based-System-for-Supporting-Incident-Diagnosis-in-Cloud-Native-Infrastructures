@@ -1,136 +1,152 @@
-import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Clock, Loader2, ServerCog } from "lucide-react";
-import { MarkdownPreview } from "../components/MarkdownPreview";
-import { ChatPanel } from "../components/ChatPanel";
+import { ArrowLeft, Check, Copy } from "lucide-react";
+import { PageHeader } from "../components/PageHeader";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { StatusBadge } from "../components/StatusBadge";
-import { fetchIssue, updateIssueStatus } from "../lib/api";
-import { formatIssueDate } from "../lib/format";
-import type { Issue } from "../lib/types";
+import { EmptyCard, ErrorCard, IssueMeta } from "../components/Cards";
+import {
+  ErrorSourcesSection,
+  ProblemSection,
+  RawDiagnosisSection,
+  RemediationsSection,
+  ReportEmptyState,
+} from "../components/IssueReport";
+import { useIssueDetail } from "../hooks/useIssueDetail";
+import { useTransientFlag } from "../hooks/useTransientFlag";
+import { deriveReportSections } from "../lib/issueView";
+
+function BackLink() {
+  return (
+    <Link
+      to="/issues"
+      className="mb-4 inline-flex items-center gap-1.5 text-xs text-[var(--color-muted)] hover:text-white"
+    >
+      <ArrowLeft className="h-3.5 w-3.5" /> Back to issues
+    </Link>
+  );
+}
+
+function CopyMarkdownButton({ markdown }: { markdown: string }) {
+  const { flag: copied, trigger: markCopied } = useTransientFlag(2000);
+  return (
+    <button
+      onClick={() =>
+        void navigator.clipboard
+          .writeText(markdown)
+          .then(markCopied)
+          .catch(() => {})
+      }
+      // The visible label is hidden below `sm`, and lucide marks its icons
+      // aria-hidden — without this the button announces as just "button".
+      aria-label="Copy Markdown"
+      className="btn-secondary"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      <span className="hidden sm:inline">{copied ? "Copied" : "Copy Markdown"}</span>
+    </button>
+  );
+}
 
 export function IssueDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [issue, setIssue] = useState<Issue | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [updating, setUpdating] = useState(false);
-  const [updateError, setUpdateError] = useState<string | null>(null);
+  const { detail, summary, status, error, retry, updating, updateError, toggleStatus } =
+    useIssueDetail(id);
 
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    setLoading(true);
+  // Whatever the list already cached paints the header immediately; the
+  // detail request revalidates behind it.
+  const head = detail ?? summary;
 
-    fetchIssue(id)
-      .then((fetched) => {
-        if (cancelled) return;
-        setIssue(fetched);
-        setLoadError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-
-  async function toggleStatus() {
-    if (!issue) return;
-    const nextStatus = issue.status === "pending" ? "resolved" : "pending";
-    setUpdating(true);
-    setUpdateError(null);
-    try {
-      const updated = await updateIssueStatus(issue.id, nextStatus);
-      setIssue(updated);
-    } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setUpdating(false);
-    }
-  }
-
-  if (loading) {
+  if (status === "missing") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2">
-        <Loader2 className="h-5 w-5 animate-spin text-[var(--color-muted)]" />
-        <p className="text-sm text-[var(--color-muted)]">Loading issue…</p>
+      <div className="w-full pb-8">
+        <BackLink />
+        <EmptyCard>Issue {id} was not found.</EmptyCard>
       </div>
     );
   }
 
-  if (!issue) {
+  if (!head) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-[var(--color-muted)]">
-          {loadError ? `Couldn't load issue ${id}: ${loadError}` : `Issue ${id} was not found.`}
-        </p>
-        <Link
-          to="/issues"
-          className="flex items-center gap-1.5 text-sm text-[var(--color-brand)] hover:underline"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to issues
-        </Link>
+      <div className="w-full pb-8">
+        <BackLink />
+        {status === "error" ? (
+          <ErrorCard title="Couldn't load this issue." detail={error} onRetry={retry} />
+        ) : (
+          <EmptyCard status>Loading issue…</EmptyCard>
+        )}
       </div>
     );
   }
+
+  const sections = detail ? deriveReportSections(detail) : null;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="mb-5 shrink-0">
-        <Link
-          to="/issues"
-          className="mb-3 inline-flex items-center gap-1.5 text-xs text-[var(--color-muted)] hover:text-white"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to issues
-        </Link>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-sm text-[var(--color-muted)]">{issue.id}</span>
-          <SeverityBadge severity={issue.severity} />
-          <StatusBadge status={issue.status} />
-          <button
-            onClick={toggleStatus}
-            disabled={updating}
-            className="ml-auto rounded-lg border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-white disabled:opacity-50"
+    <div className="w-full pb-8">
+      <BackLink />
+
+      {/* One centred column. Layout's <main> stays the app's only vertical
+          scroller — no nested overflow region here, so find-in-page, deep
+          links and scroll position all behave. */}
+      <article className="mx-auto w-full max-w-4xl">
+        <PageHeader
+          eyebrow={
+            <>
+              <span className="font-mono text-sm text-[var(--color-muted)]">{head.id}</span>
+              <SeverityBadge severity={head.severity} />
+              <StatusBadge status={head.status} />
+            </>
+          }
+          title={head.title}
+          description={head.summary}
+          meta={<IssueMeta service={head.service} createdAt={head.createdAt} />}
+          actions={
+            <>
+              {detail?.markdownExport ? (
+                <CopyMarkdownButton markdown={detail.markdownExport} />
+              ) : null}
+              <button onClick={toggleStatus} disabled={updating} className="btn-secondary">
+                {updating ? "Updating…" : head.status === "pending" ? "Mark resolved" : "Reopen"}
+              </button>
+            </>
+          }
+        />
+
+        {updateError && (
+          <div
+            role="alert"
+            className="mb-4 rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
           >
-            {updating ? "Updating…" : issue.status === "pending" ? "Mark resolved" : "Reopen"}
-          </button>
-        </div>
-        {updateError ? (
-          <p className="mt-1.5 text-xs text-[var(--color-danger)]">{updateError}</p>
-        ) : null}
-        <h1 className="mt-2 text-xl font-semibold text-white">{issue.title}</h1>
-        <div className="mt-1.5 flex items-center gap-4 text-xs text-[var(--color-muted)]">
-          <span className="flex items-center gap-1">
-            <ServerCog className="h-3.5 w-3.5" />
-            {issue.service}
-          </span>
-          <span className="flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {formatIssueDate(issue.createdAt)}
-          </span>
-        </div>
-      </div>
+            {updateError}
+          </div>
+        )}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
-        {/* Left: issue report (markdown) */}
-        <div className="card min-h-[320px] overflow-y-auto p-5 lg:h-full lg:w-1/2">
-          <MarkdownPreview content={issue.content} />
-        </div>
-
-        {/* Right: AI chat. Height is capped below lg so the message list scrolls
-            internally instead of stretching the page. key remounts the panel with
-            fresh state when navigating between issues. */}
-        <div className="flex h-[70dvh] min-h-[420px] flex-col lg:h-full lg:w-1/2">
-          <ChatPanel key={issue.id} issueId={issue.id} />
-        </div>
-      </div>
+        {sections ? (
+          <div className="space-y-4">
+            {sections.problem && (
+              <ProblemSection problem={sections.problem} isRaw={sections.problemIsRaw} />
+            )}
+            {sections.errorSources.length > 0 && (
+              <ErrorSourcesSection items={sections.errorSources} />
+            )}
+            {sections.remediations.length > 0 && (
+              <RemediationsSection items={sections.remediations} />
+            )}
+            {sections.showRawDiagnosis && (
+              <RawDiagnosisSection
+                text={sections.rawDiagnosis}
+                defaultOpen={sections.rawDiagnosisOpen}
+              />
+            )}
+            {sections.isEmpty && <ReportEmptyState />}
+          </div>
+        ) : status === "error" ? (
+          // The header is painted from the cached summary, but the detail
+          // request failed — say so instead of spinning forever.
+          <ErrorCard title="Couldn't load the full report." detail={error} onRetry={retry} />
+        ) : (
+          <EmptyCard status>Loading the full report…</EmptyCard>
+        )}
+      </article>
     </div>
   );
 }
