@@ -35,6 +35,35 @@ No configuration needed — every setting has a working default. The first start
 loads the models (60–110 s) before it listens; `curl localhost:5001/healthz`
 confirms it is up.
 
+## Docker
+
+The image includes the default Docling layout and table models. It can therefore
+start without downloading model weights at runtime. Build from the repository root:
+
+```bash
+docker build -t idar-doc-converter:local ./doc-converter
+```
+
+Run it for the containerized panel:
+
+```bash
+docker run -d --name idar-doc-converter \
+  --restart unless-stopped \
+  -e ALLOWED_ORIGINS=http://localhost:3000 \
+  -p 127.0.0.1:5001:5001 \
+  idar-doc-converter:local
+```
+
+The container runs as UID/GID `10002:10002`, uses one Gunicorn worker and one
+thread, and exposes `/healthz` on port `5001`. A long healthcheck start period
+allows Docling to initialize. The runtime is forced offline for model access;
+OCR, code enrichment, or other model-dependent options require an image rebuilt
+with their weights or an explicitly mounted `MODELS_DIR`.
+
+The image is intentionally large because it includes PyTorch, Docling, and the
+model weights. Do not place this process in the `client` or `agent-core` Pod.
+Deploy it as a separate workload with its own memory request and limit.
+
 ### Offline
 
 Docling downloads its weights on first use. To bake them in instead:
@@ -136,9 +165,9 @@ disk.
   refuses to start when the observability stack is down. Adding a runbook
   should not depend on that. It also keeps torch out of `agent-core`'s six
   pure-Python dependencies.
-- **Host process, not a cluster pod.** Docling peaks around 3.4 GB RSS on 8
-  pages; the closest Helm analogue in this repo caps at 150 Mi, and Docling's
-  own manifests ask for 4 Gi and a GPU.
+- **Separate host process or cluster Pod.** Docling peaks around 3.4 GB RSS on
+  8 pages, so its Pod needs a dedicated resource budget and may be scheduled on
+  a larger worker. It must not inherit the 150 Mi limits used by Grafana MCP.
 - **Single-threaded** for the same reason.
 - **`allowed_formats=[InputFormat.PDF]`** drops the HTML, LaTeX and XML parsing
   paths where Docling's CVEs have lived.
