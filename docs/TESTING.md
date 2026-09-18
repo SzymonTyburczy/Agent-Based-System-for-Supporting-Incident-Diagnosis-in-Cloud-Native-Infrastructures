@@ -13,6 +13,7 @@ Configure a working LLM provider and cluster access before submitting an alert.
 | --- | --- | --- |
 | Panel | `http://localhost:3000` | Usually `http://localhost:5173` |
 | Agent API | `http://localhost:8090` | `http://localhost:8090` with the documented Uvicorn command |
+| Document converter | `http://localhost:5001` (container or host process) | `http://localhost:5001` |
 | Grafana MCP | Agent uses `http://host.docker.internal:18000/sse` on Docker Desktop | Agent can use `http://localhost:8000/sse` with a matching port forward |
 
 Docker Desktop networking is a prerequisite for the `host.docker.internal` setup,
@@ -232,6 +233,40 @@ test alert and confirm delivery in Alertmanager, queue acceptance in agent logs,
 report creation. Do not treat the existence of unrelated historical reports as proof
 that current automatic delivery is working.
 
+### 7. Test PDF conversion
+
+Start [doc-converter](../doc-converter/README.md) and set its `ALLOWED_ORIGINS` to
+include the panel origin (`http://localhost:3000` for Docker or `http://localhost:5173`
+for Vite). The panel image must be built with `VITE_CONVERTER_URL=http://localhost:5001`;
+see [CONTAINERS.md](CONTAINERS.md). Default conversion does not need an LLM key.
+
+Use a short PDF with selectable text; replace `sample.pdf` with its actual path.
+
+**PowerShell**
+
+```powershell
+Invoke-RestMethod http://localhost:5001/healthz
+curl.exe --fail-with-body -H "Origin: http://localhost:3000" -F "file=@sample.pdf" http://localhost:5001/convert
+```
+
+**Bash**
+
+```bash
+curl --fail --silent --show-error http://localhost:5001/healthz
+curl --fail-with-body -H 'Origin: http://localhost:3000' -F 'file=@sample.pdf' http://localhost:5001/convert
+```
+
+Expected: health reports `engine: docling`; conversion returns non-empty `markdown`,
+`pages`, and `duration_ms`. If `API_TOKEN` is set, provide its Authorization header.
+In the panel, open **Documentation**, upload the PDF, inspect Preview, and edit the
+result using the Edit tab. Confirm the converter status is online. Markdown/text
+uploads should work even without the converter. **Send** still logs a payload rather
+than persisting documents to a RAG backend.
+
+The initial start may download model weights. An image-only PDF can return 422 with
+OCR disabled; multi-line code formatting has known limitations documented in the
+converter README. Check headings and tables as well as the HTTP status.
+
 ## Automated tests without live infrastructure
 
 The backend tests use fake providers, mocked MCP sessions, and isolated report stores.
@@ -275,6 +310,26 @@ tool adapters, incident parsing, report generation, storage, and API behavior.
 Frontend tests cover API mapping and document conversion helpers; the build also
 checks TypeScript. These checks complement, rather than replace, the live flow above.
 
+The converter also has an independent test suite using an injected pipeline, without
+loading Docling models. After installing its development dependencies, run from the
+repository root:
+
+**PowerShell**
+
+```powershell
+cd doc-converter
+.\.venv\Scripts\python.exe -m pytest -q
+cd ..
+```
+
+**Bash**
+
+```bash
+cd doc-converter
+.venv/bin/python -m pytest -q
+cd ..
+```
+
 ## Troubleshooting
 
 | Symptom or limitation | Meaning / next check |
@@ -286,3 +341,4 @@ checks TypeScript. These checks complement, rather than replace, the live flow a
 | `queued` but no report | Inspect worker logs for provider errors, tool failures, or storage errors. There is no durable job-status API. |
 | Missing evidence from a namespace | Check both `KUBECTL_ALLOWED_NAMESPACES` and Kubernetes RBAC; changing the allowlist does not grant permissions. |
 | Reports disappear after container replacement | Check `/data` mounts and `REPORT_OUTPUT_DIR` / `REPORTS_DB_PATH`. |
+| Converter offline or PDF upload fails in the browser | Check converter `/healthz`, build-time `VITE_CONVERTER_URL`, and `ALLOWED_ORIGINS` matching the panel origin. |

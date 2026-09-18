@@ -19,6 +19,7 @@ The objective of this engineering thesis is to design and implement a prototype 
 ## Repository Layout
 
 Architecture and flow diagrams: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Proposed Kubernetes topology: [`docs/CLUSTER.md`](docs/CLUSTER.md).
 Manual and automated tests (PowerShell and Bash): [`docs/TESTING.md`](docs/TESTING.md).
 
 - **`agent-core/`** — the diagnostic agent (Python/FastAPI): receives alerts, investigates using LLM-driven tool calls (kubectl, Grafana/LGTM via MCP), and produces the structured incident reports the client displays. Setup and details: [agent-core/README.md](agent-core/README.md).

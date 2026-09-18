@@ -7,7 +7,8 @@ Build from the repository root using separate build contexts:
 
 ```bash
 docker build --build-arg KUBECTL_VERSION=v1.35.0 -t idar-agent-core:local ./agent-core
-docker build --build-arg VITE_AGENT_API_URL=https://agent.example.com -t idar-client:local ./client
+docker build --build-arg VITE_AGENT_API_URL=https://agent.example.com --build-arg VITE_CONVERTER_URL=https://converter.example.com -t idar-client:local ./client
+docker build -t idar-doc-converter:local ./doc-converter
 ```
 
 Match `KUBECTL_VERSION` to your cluster version. According to the
@@ -72,6 +73,9 @@ mode; `webhook_server.py` provides the API used by the web panel.
 
 ## Running inside a cluster on EC2
 
+See [CLUSTER.md](CLUSTER.md) for the proposed namespaces, Pod separation, Services,
+Ingress, storage, node placement, and initial resource budgets.
+
 - Push the images to a registry accessible to the nodes (such as ECR) and use them in a Deployment.
 - Agent: use one replica, one worker, and the `Recreate` strategy. The current queue
   and SSE broadcaster are held in process memory, and the database is local SQLite.
@@ -115,15 +119,66 @@ on port `8080`. The configuration supports direct navigation to React Router rou
 docker run -d --name idar-client -p 127.0.0.1:3000:8080 idar-client:local
 ```
 
-`VITE_AGENT_API_URL` is an absolute API URL reachable **from the browser**, not
-an internal Kubernetes Service DNS name. Changing it requires rebuilding the image.
+`VITE_AGENT_API_URL` and `VITE_CONVERTER_URL` are absolute service URLs reachable
+**from the browser**, not internal Kubernetes Service DNS names. Changing them
+requires rebuilding the image. The converter URL defaults to `http://localhost:5001`.
 Set the agent's `CLIENT_ALLOWED_ORIGINS` to the panel's origin. For the ingress
 serving the API, disable SSE buffering and set the timeout above the 15-second
 keep-alive interval.
 
-The image intentionally does not accept Gemini keys or API tokens as build arguments:
-`VITE_*` values are public in the JavaScript bundle. PDF conversion requiring a Gemini
-key will be unavailable. Before deploying the panel publicly, add an authentication/proxy
-layer and move PDF conversion to the backend (this limitation of the current application
-is also described in `client/README.md`). Use private access for the current panel;
-if `CLIENT_API_TOKEN` is set in the agent, that layer must handle authorization.
+PDF conversion is performed by the separate [doc-converter](../doc-converter/README.md)
+service using Docling. It has its own image and is not included in the panel or agent
+image. No Gemini key is required. The browser calls the converter directly, so its `ALLOWED_ORIGINS` must
+include the panel origin (`http://localhost:3000` for the local container).
+
+For the local setup, create `doc-converter/.env` with:
+
+```dotenv
+HOST=127.0.0.1
+PORT=5001
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+```
+
+Install and start the service from the repository root:
+
+**PowerShell**
+
+```powershell
+cd doc-converter
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e '.[dev]'
+.\.venv\Scripts\python.exe -m doc_converter.app
+```
+
+**Bash**
+
+```bash
+cd doc-converter
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m doc_converter.app
+```
+
+The host-process setup downloads model weights on first use. The Docker image embeds
+the default models and uses offline mode. To run the converter image locally:
+
+```bash
+docker run -d --name idar-doc-converter \
+  --restart unless-stopped \
+  -e ALLOWED_ORIGINS=http://localhost:3000 \
+  -p 127.0.0.1:5001:5001 \
+  idar-doc-converter:local
+```
+
+Wait for `http://localhost:5001/healthz` to respond before testing PDFs.
+Build the local panel with both service URLs:
+
+```bash
+docker build --build-arg VITE_AGENT_API_URL=http://localhost:8090 --build-arg VITE_CONVERTER_URL=http://localhost:5001 -t idar-client:local ./client
+```
+
+An existing container continues using its old image after a build; recreate it to
+use the new one. The image does not accept API tokens as build arguments because
+`VITE_*` values are public in JavaScript. Use private access for this setup. Public
+deployment still requires an authentication/proxy layer; if `CLIENT_API_TOKEN` or
+the converter's `API_TOKEN` is set, that layer must handle authorization.

@@ -15,6 +15,7 @@ For the example monitoring stack, see the
 | Component | Responsibility | Main files |
 | --- | --- | --- |
 | Web panel | React UI for incident lists, report details, status changes, and document preparation; served by Nginx in Docker | `client/src/pages/`, `client/src/lib/api.ts` |
+| Document converter | Independent Flask service converting PDFs to Markdown with local Docling models | `doc-converter/doc_converter/` |
 | Agent API | FastAPI application receiving Alertmanager webhooks and serving reports | `agent-core/webhook_server.py` |
 | Investigation worker | Processes an in-memory queue, one incident at a time | `agent-core/webhook_server.py` |
 | Agent loop | Repeatedly asks an LLM for tool calls or a final diagnosis, subject to an iteration budget | `agent-core/agent_core/agent/loop.py` |
@@ -27,12 +28,12 @@ For the example monitoring stack, see the
 
 ## Architecture diagram
 
-GitHub renders the following Mermaid diagram directly in the Markdown preview.
-
 ```mermaid
 flowchart LR
     Operator[Operator] --> Browser[React web panel]
     Nginx[Nginx container] -->|Static files| Browser
+    Browser -->|PDF upload: POST /convert| Converter[Flask doc-converter / local Docling models]
+    Converter -->|Markdown| Browser
     Browser -->|REST: list, detail, status| API[FastAPI agent API]
     API -.->|SSE notifications: see limitations| Browser
 
@@ -68,8 +69,10 @@ flowchart LR
     Poll -->|Generate and save report| JSON
 ```
 
-The browser contacts the agent API directly. Nginx currently serves static files;
-it is not an API proxy. The Grafana MCP server is a separate service, not a
+The browser contacts the agent API and document converter directly. Nginx serves
+static files; it is not an API proxy. The converter runs as a service separate from
+the agent; Markdown and text uploads are handled in the browser without conversion.
+The Grafana MCP server is a separate service, not a
 process embedded in the agent image. Kubernetes information also has a separate
 path: the agent invokes kubectl directly, independently of MCP.
 
@@ -92,7 +95,9 @@ path: the agent invokes kubectl directly, independently of MCP.
 7. The webhook worker writes a JSON file and inserts a SQLite record with an ID,
    timestamp, service, severity, initial `pending` status, and rendered Markdown.
    These are separate writes, not one transaction across both storage formats.
-8. The panel reads the report through REST. The operator can mark it resolved or
+8. The panel reads structured report fields through REST; Markdown is an export
+   artifact used by **Copy Markdown**. TanStack Query manages the client cache.
+   The operator can mark the report resolved or
    reopen it. This changes the SQLite status, not the monitored workload or the
    original JSON report.
 
@@ -148,6 +153,7 @@ Actual bindings can be checked with `docker ps`.
 | --- | --- |
 | Browser to panel | `http://localhost:3000` maps to Nginx port `8080` |
 | Browser to agent | `http://localhost:8090` maps to agent port `8080` |
+| Browser to converter | `http://localhost:5001`; separate container or host process, independent of agent availability |
 | Agent to MCP | `MCP_GRAFANA_URL=http://host.docker.internal:18000/sse` |
 | Host to MCP Pod | kubectl forwards `127.0.0.1:18000` to Service `grafana-mcp:8000` |
 | Agent to Kubernetes | Mounted kubeconfig locally; ServiceAccount inside Kubernetes |
@@ -156,7 +162,7 @@ Actual bindings can be checked with `docker ps`.
 `--env-file` injects backend configuration at container creation; `-e` overrides
 individual settings. Editing the host `.env` and restarting an existing container
 does not reload those injected values: recreate the container with the updated file.
-The frontend's `VITE_AGENT_API_URL` is embedded at build time, so changing it requires
+The frontend's `VITE_AGENT_API_URL` and `VITE_CONVERTER_URL` are embedded at build time, so changing them requires
 rebuilding the frontend image. See [CONTAINERS.md](CONTAINERS.md) for build and run commands.
 
 The agent connects to MCP and discovers tools during startup. Start the monitoring
@@ -184,9 +190,12 @@ every intermediate tool call.
 
 Document preparation is implemented in the UI, but **Send** currently logs the payload
 to the browser console rather than ingesting it into a RAG backend. The chat panel
-does not yet provide a RAG-backed conversation. PDF conversion uses Gemini from the
-browser in development; the container build excludes its key, so PDF conversion is
-unavailable there. Markdown/text preparation can be tested independently.
+has been removed; RAG-backed chat remains future work. PDF conversion uses the
+local `doc-converter` service with Docling. Default conversion does not use an LLM
+API or send documents to an external provider. Optional figure descriptions can use
+a separately configured model endpoint. Models must be downloaded before offline use.
+Markdown/text preparation can be tested without the converter. See the
+[converter README](../doc-converter/README.md) for model setup and code-block limitations.
 
 The current web build is intended for private access. Public deployment needs the
 authentication/proxy work described in [CONTAINERS.md](CONTAINERS.md). Keep LLM keys,
