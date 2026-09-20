@@ -1,3 +1,6 @@
+# Development:  docker compose up -d qdrant        (API z `uv run fastapi dev`, Ollama na hoście)
+# Kontener:     docker compose up -d --build        (Qdrant + API w Dockerze, Ollama na hoście)
+# Wszystko:     docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build
 services:
   qdrant:
     image: qdrant/qdrant:v1.19.0
@@ -6,6 +9,36 @@ services:
       - "6334:6334"
     volumes:
       - qdrant_storage:/qdrant/storage
+    healthcheck:
+      # Obraz Qdranta nie ma curl/wget — wystarczy otwarcie portu TCP z basha.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  server:
+    build: .
+    image: idar-rag-server:local
+    ports:
+      - "8100:8080"
+    env_file:
+      # Lokalny .env (model, chunking, token...) jest opcjonalny; adresy usług
+      # poniżej i tak go nadpisują, bo `localhost` w kontenerze to sam kontener.
+      - path: .env
+        required: false
+    environment:
+      IDAR_QDRANT_URL: http://qdrant:6333
+      # Ollama na hoście (Docker Desktop: host.docker.internal działa od ręki,
+      # GPU bez konfiguracji). Ollama w kontenerze: docker-compose.ollama.yml.
+      IDAR_OLLAMA_URL: http://host.docker.internal:11434
+    extra_hosts:
+      # Linux nie ma host.docker.internal; host-gateway dopisuje go do /etc/hosts.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   qdrant_storage:

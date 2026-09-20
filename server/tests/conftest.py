@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from qdrant_client import QdrantClient
 
+from app.config import Settings
 from app.main import create_app
 from app.rag.embeddings import l2_normalize
 
@@ -35,6 +36,12 @@ def fake_embedder() -> FakeEmbedder:
 
 @pytest.fixture
 def client(fake_embedder: FakeEmbedder):
-    app = create_app(embedder=fake_embedder, qdrant=QdrantClient(":memory:"))
+    # _env_file=None: lokalny .env dewelopera (np. IDAR_API_TOKEN) nie ma
+    # wpływu na testy.
+    app = create_app(
+        settings=Settings(_env_file=None),
+        embedder=fake_embedder,
+        qdrant=QdrantClient(":memory:"),
+    )
     with TestClient(app) as test_client:
         yield test_client
