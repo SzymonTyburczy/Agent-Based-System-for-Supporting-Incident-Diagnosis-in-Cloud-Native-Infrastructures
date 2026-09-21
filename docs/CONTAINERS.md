@@ -9,6 +9,7 @@ Build from the repository root using separate build contexts:
 docker build --build-arg KUBECTL_VERSION=v1.35.0 -t idar-agent-core:local ./agent-core
 docker build --build-arg VITE_AGENT_API_URL=https://agent.example.com --build-arg VITE_CONVERTER_URL=https://converter.example.com -t idar-client:local ./client
 docker build -t idar-doc-converter:local ./doc-converter
+docker build -t idar-rag-server:local ./server
 ```
 
 Match `KUBECTL_VERSION` to your cluster version. According to the
@@ -92,6 +93,13 @@ Ingress, storage, node placement, and initial resource budgets.
   and matching credentials in Alertmanager.
 - Configure HTTP probes for `/healthz` on port `8080`, including a startupProbe
   that allows time to connect to MCP. Kubernetes does not use Docker's HEALTHCHECK.
+- RAG knowledge base: `rag-server` is stateless and may run with several replicas.
+  Qdrant needs a StatefulSet with a PVC (the official `qdrant/qdrant` Helm chart
+  works); Ollama needs a PVC for model weights (about 5 GB for `qwen3-embedding:8b`)
+  and either a GPU node or a generous CPU budget. Point `IDAR_QDRANT_URL` and
+  `IDAR_OLLAMA_URL` at the in-cluster Services and configure liveness on `/healthz`,
+  readiness on `/api/health`, and a startupProbe of about 90 seconds for the
+  embedding probe. See [CLUSTER.md](CLUSTER.md).
 
 ## Connecting to MCP locally (Docker Desktop / PowerShell)
 
@@ -182,3 +190,53 @@ use the new one. The image does not accept API tokens as build arguments because
 `VITE_*` values are public in JavaScript. Use private access for this setup. Public
 deployment still requires an authentication/proxy layer; if `CLIENT_API_TOKEN` or
 the converter's `API_TOKEN` is set, that layer must handle authorization.
+
+## RAG knowledge base (server)
+
+The image follows the same conventions as the agent and converter images:
+`python:3.12-slim-bookworm`, multi-stage build, UID/GID `10003:10003`, port `8080`,
+one Uvicorn worker, and a `HEALTHCHECK` on `/healthz`. Dependencies are installed
+from `server/uv.lock` with `uv sync --frozen`, so the Python layer is reproducible.
+The embedding model is not part of the image: it runs in Ollama, vectors live in
+Qdrant, and the API container itself is stateless. The settings table and the
+Kubernetes notes are in [`server/README.md`](../server/README.md).
+
+```bash
+docker run -d --name idar-rag-server \
+  --restart unless-stopped \
+  -e IDAR_QDRANT_URL=http://QDRANT_HOST:6333 \
+  -e IDAR_OLLAMA_URL=http://OLLAMA_HOST:11434 \
+  -e IDAR_EMBEDDING_MODEL=qwen3-embedding:0.6b \
+  -e IDAR_CORS_ORIGINS=http://localhost:3000 \
+  -e IDAR_API_TOKEN=CHANGE_ME \
+  -p 127.0.0.1:8100:8080 \
+  idar-rag-server:local
+curl --fail http://localhost:8100/healthz
+```
+
+`QDRANT_HOST` and `OLLAMA_HOST` must be reachable from the container; `localhost`
+refers to the container itself. `IDAR_API_TOKEN` is optional: when set,
+`/api/documents*` and `/api/search` require `Authorization: Bearer <token>`, while
+`/healthz` and `/api/health` stay open for probes. `/healthz` only confirms that the
+process is up; `/api/health` also checks Qdrant, runs an embedding probe, and returns
+503 when either fails. The API waits for Qdrant and Ollama at startup
+(`IDAR_STARTUP_RETRIES` × `IDAR_STARTUP_RETRY_SECONDS`, 60 seconds by default)
+instead of crash-looping while they come up.
+
+`server/docker-compose.yml` runs the same image together with Qdrant `v1.19.0`
+(persistent `qdrant_storage` volume). Ollama runs on the host and is reached through
+`host.docker.internal:11434`, which keeps native GPU access on Docker Desktop; on
+native Linux Docker the host Ollama must listen beyond loopback (`OLLAMA_HOST=0.0.0.0`).
+The `docker-compose.ollama.yml` overlay runs Ollama in Docker instead: a one-shot
+`ollama-pull` service fetches `IDAR_EMBEDDING_MODEL` and the API starts only after it
+succeeded; an NVIDIA `deploy` block is ready to uncomment.
+
+```bash
+cd server
+docker compose up -d qdrant                                                       # development: API from uv, Ollama on the host
+docker compose up -d --build                                                      # Qdrant + API in Docker, Ollama on the host
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build   # everything in Docker
+```
+
+The panel is not wired to this API yet. Once it is, its base URL will be a
+browser-reachable build argument like `VITE_AGENT_API_URL`, with the same caveats.

@@ -8,6 +8,7 @@ Manual and automated checks for the agent and web panel. For system design, see
 
 For live tests, start the monitored cluster, Grafana MCP, the agent API, and the panel.
 Configure a working LLM provider and cluster access before submitting an alert.
+The RAG knowledge base (step 8) needs only Qdrant and Ollama.
 
 | Service | Container setup used below | Development without containers |
 | --- | --- | --- |
@@ -15,6 +16,7 @@ Configure a working LLM provider and cluster access before submitting an alert.
 | Agent API | `http://localhost:8090` | `http://localhost:8090` with the documented Uvicorn command |
 | Document converter | `http://localhost:5001` (container or host process) | `http://localhost:5001` |
 | Grafana MCP | Agent uses `http://host.docker.internal:18000/sse` on Docker Desktop | Agent can use `http://localhost:8000/sse` with a matching port forward |
+| RAG API | `http://localhost:8100` (compose maps it to container port `8080`) | `http://localhost:8100` with `fastapi dev` |
 
 Docker Desktop networking is a prerequisite for the `host.docker.internal` setup,
 regardless of shell. Using Bash on native Linux Docker requires its own reachable
@@ -260,13 +262,64 @@ Expected: health reports `engine: docling`; conversion returns non-empty `markdo
 `pages`, and `duration_ms`. If `API_TOKEN` is set, provide its Authorization header.
 In the panel, open **Documentation**, upload the PDF, inspect Preview, and edit the
 result using the Edit tab. Confirm the converter status is online. Markdown/text
-uploads should work even without the converter. **Send** still logs a payload rather
-than persisting documents to a RAG backend.
+uploads should work even without the converter. **Send** still logs the payload
+instead of calling the RAG API; step 8 exercises that API directly with the same
+payload shape.
 
 The initial host-process start may download model weights; the Docker image already
 contains the default models. An image-only PDF can return 422 with OCR disabled;
 multi-line code formatting has known limitations documented in the converter README.
 Check headings and tables as well as the HTTP status.
+
+### 8. Test the RAG knowledge base
+
+Start the RAG API as described in [RUNNING.md](RUNNING.md#4-start-the-rag-knowledge-base)
+or [CONTAINERS.md](CONTAINERS.md#rag-knowledge-base-server). The payload is the same
+`{data, autor, tresc}` shape the panel builds. The sample text avoids Polish
+diacritics on purpose: Windows PowerShell 5.1 does not send string bodies as UTF-8.
+
+**PowerShell**
+
+```powershell
+Invoke-RestMethod http://localhost:8100/api/health
+$doc = @{
+    data  = (Get-Date -Format yyyy-MM-dd)
+    autor = 'Manual test'
+    tresc = "# Runbook: CrashLoopBackOff`n`n## Diagnoza`n`nPod restartuje sie w petli. Sprawdz logi poprzedniego kontenera: kubectl logs <pod> --previous."
+} | ConvertTo-Json
+$ingested = Invoke-RestMethod -Method Post -Uri http://localhost:8100/api/documents -ContentType 'application/json' -Body $doc
+$ingested
+$query = @{ query = 'pod ciagle sie restartuje, jak znalezc przyczyne?'; top_k = 3 } | ConvertTo-Json
+(Invoke-RestMethod -Method Post -Uri http://localhost:8100/api/search -ContentType 'application/json' -Body $query).results | Select-Object score, title, section_path
+Invoke-RestMethod -Method Delete -Uri "http://localhost:8100/api/documents/$($ingested.doc_id)"
+```
+
+**Bash**
+
+```bash
+curl --fail --silent --show-error http://localhost:8100/api/health | jq .
+doc=$(jq -n --arg data "$(date -u +%Y-%m-%d)" \
+  '{data: $data, autor: "Manual test", tresc: "# Runbook: CrashLoopBackOff\n\n## Diagnoza\n\nPod restartuje sie w petli. Sprawdz logi poprzedniego kontenera: kubectl logs <pod> --previous."}')
+ingested=$(curl --fail --silent --show-error -H 'Content-Type: application/json' --data-binary "$doc" http://localhost:8100/api/documents)
+echo "$ingested" | jq .
+curl --fail --silent --show-error -H 'Content-Type: application/json' \
+  --data '{"query": "pod ciagle sie restartuje, jak znalezc przyczyne?", "top_k": 3}' \
+  http://localhost:8100/api/search | jq '.results[] | {score, title, section_path}'
+curl --fail --silent --show-error -X DELETE "http://localhost:8100/api/documents/$(echo "$ingested" | jq -r .doc_id)"
+```
+
+Expected: health returns `status: ok` with the model name and vector dimension
+(`1024` for `qwen3-embedding:0.6b`, `4096` for `8b`). The first POST returns `201`
+with a `doc_id`, `title: "Runbook: CrashLoopBackOff"` and `chunk_count: 1` (the
+heading-only H1 produces no chunk of its own). Repeating the same POST returns `200`
+with `already_exists: true`: document ids are derived from the content, so re-sending
+never duplicates anything. The search lists the runbook first with `section_path`
+`["Runbook: CrashLoopBackOff", "Diagnoza"]`; the score is a cosine similarity
+(roughly 0.6–0.7 for this paraphrase on `0.6b`) and its absolute value differs
+between models, so compare rankings, not raw scores. DELETE returns `204` and
+`GET /api/documents` no longer lists the document. With `IDAR_API_TOKEN` set, pass
+the Authorization header on the `/api/documents` and `/api/search` calls;
+`/api/health` stays open.
 
 ## Automated tests without live infrastructure
 
@@ -331,6 +384,19 @@ cd doc-converter
 cd ..
 ```
 
+The RAG knowledge base tests run against a fake embedding provider and an in-memory
+Qdrant; `uv` creates the environment from `uv.lock` on first use. The same command
+works in both shells:
+
+```bash
+cd server
+uv run python -m pytest -q
+cd ..
+```
+
+Two `slow` tests (`uv run python -m pytest -q -m slow`) call the real
+`qwen3-embedding:0.6b` through Ollama and are deselected by default.
+
 ## Troubleshooting
 
 | Symptom or limitation | Meaning / next check |
@@ -343,3 +409,7 @@ cd ..
 | Missing evidence from a namespace | Check both `KUBECTL_ALLOWED_NAMESPACES` and Kubernetes RBAC; changing the allowlist does not grant permissions. |
 | Reports disappear after container replacement | Check `/data` mounts and `REPORT_OUTPUT_DIR` / `REPORTS_DB_PATH`. |
 | Converter offline or PDF upload fails in the browser | Check converter `/healthz`, build-time `VITE_CONVERTER_URL`, and `ALLOWED_ORIGINS` matching the panel origin. |
+| RAG API exits with `Embedding provider startup probe failed` after about a minute | Ollama is unreachable or the model is not pulled: `ollama pull qwen3-embedding:0.6b`; check `IDAR_OLLAMA_URL` (`host.docker.internal` from a container, `OLLAMA_HOST=0.0.0.0` on native Linux). |
+| RAG `/api/health` returns 503 | The JSON names the failing side: `qdrant` (container down or wrong `IDAR_QDRANT_URL`) or `embedding` (Ollama or model). `/healthz` stays 200 because it only checks the process. |
+| RAG search returns an empty `results` list | Nothing is ingested for the active collection; check `GET /api/documents`. Changing `IDAR_EMBEDDING_MODEL` switches to a new, empty collection, so ingest the documents again. |
+| `Failed to spawn: pytest` (os error 4551) on Windows | Smart App Control blocks uv's script launchers; use `uv run python -m pytest` and `python -m uvicorn` (see `server/README.md`). |

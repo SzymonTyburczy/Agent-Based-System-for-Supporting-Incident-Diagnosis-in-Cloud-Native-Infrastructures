@@ -16,6 +16,7 @@ For the example monitoring stack, see the
 | --- | --- | --- |
 | Web panel | React UI for incident lists, report details, status changes, and document preparation; served by Nginx in Docker | `client/src/pages/`, `client/src/lib/api.ts` |
 | Document converter | Independent Flask service converting PDFs to Markdown with local Docling models | `doc-converter/doc_converter/` |
+| RAG knowledge base | FastAPI service that ingests Markdown documentation (section-aware chunking + embeddings) into Qdrant and serves semantic search with provenance for the agents | `server/app/` |
 | Agent API | FastAPI application receiving Alertmanager webhooks and serving reports | `agent-core/webhook_server.py` |
 | Investigation worker | Processes an in-memory queue, one incident at a time | `agent-core/webhook_server.py` |
 | Agent loop | Repeatedly asks an LLM for tool calls or a final diagnosis, subject to an iteration budget | `agent-core/agent_core/agent/loop.py` |
@@ -34,6 +35,9 @@ flowchart LR
     Nginx[Nginx container] -->|Static files| Browser
     Browser -->|PDF upload: POST /convert| Converter[Flask doc-converter / local Docling models]
     Converter -->|Markdown| Browser
+    Browser -.->|Planned: POST /api/documents| RAG[FastAPI RAG API]
+    RAG -->|Chunks + vectors| Qdrant[(Qdrant)]
+    RAG -->|Embeddings| Ollama[Ollama / Qwen3-Embedding]
     Browser -->|REST: list, detail, status| API[FastAPI agent API]
     API -.->|SSE notifications: see limitations| Browser
 
@@ -58,6 +62,7 @@ flowchart LR
     Loop --> Registry[Tool registry]
     Registry -->|kubectl: pods and events| KAPI
     Registry -->|MCP over SSE| MCP
+    Registry -.->|Planned: POST /api/search| RAG
     Worker --> Report[Structured report generation]
     Report <-->|Formatting request| LLM
     Report --> JSON[JSON files]
@@ -74,7 +79,10 @@ static files; it is not an API proxy. The converter runs as a service separate f
 the agent; Markdown and text uploads are handled in the browser without conversion.
 The Grafana MCP server is a separate service, not a
 process embedded in the agent image. Kubernetes information also has a separate
-path: the agent invokes kubectl directly, independently of MCP.
+path: the agent invokes kubectl directly, independently of MCP. The RAG knowledge
+base is a fourth service with its own storage (Qdrant) and embedding engine (Ollama);
+today it is exercised through its own HTTP API, and the dashed edges are the planned
+panel and agent integrations.
 
 ## Incident flow
 
@@ -154,6 +162,9 @@ Actual bindings can be checked with `docker ps`.
 | Browser to panel | `http://localhost:3000` maps to Nginx port `8080` |
 | Browser to agent | `http://localhost:8090` maps to agent port `8080` |
 | Browser to converter | `http://localhost:5001`; separate container or host process, independent of agent availability |
+| Browser to RAG API | `http://localhost:8100` maps to RAG API port `8080` (`docker compose up -d --build` in `server/`) or a host process on the same port |
+| RAG API to Qdrant | `IDAR_QDRANT_URL=http://qdrant:6333` on the compose network; `http://localhost:6333` for a host process |
+| RAG API to Ollama | `IDAR_OLLAMA_URL=http://host.docker.internal:11434` (Ollama on the host) or `http://ollama:11434` with the `docker-compose.ollama.yml` overlay |
 | Agent to MCP | `MCP_GRAFANA_URL=http://host.docker.internal:18000/sse` |
 | Host to MCP Pod | kubectl forwards `127.0.0.1:18000` to Service `grafana-mcp:8000` |
 | Agent to Kubernetes | Mounted kubeconfig locally; ServiceAccount inside Kubernetes |
@@ -188,9 +199,14 @@ agent replica; queued or active investigations are not durable across restarts.
 JSON reports and SQLite status are separate representations, not an audit log of
 every intermediate tool call.
 
-Document preparation is implemented in the UI, but **Send** currently logs the payload
-to the browser console rather than ingesting it into a RAG backend. The chat panel
-has been removed; RAG-backed chat remains future work. PDF conversion uses the
+The RAG backend exists as the separate `server/` service: `POST /api/documents`
+accepts the panel's `{data, autor, tresc}` payload, chunks and embeds it into Qdrant,
+and `POST /api/search` returns the most relevant documentation fragments with their
+provenance (document, section path, author, date, score). Both integrations are
+still pending: the panel's **Send** logs the payload to the browser console instead
+of calling `/api/documents`, and the agent's tool registry has no knowledge-base
+tool yet, so investigations do not consult the documentation. The chat panel has
+been removed; RAG-backed chat remains future work. PDF conversion uses the
 local `doc-converter` service with Docling. Default conversion does not use an LLM
 API or send documents to an external provider. Optional figure descriptions can use
 a separately configured model endpoint. The Docker image contains the default models;

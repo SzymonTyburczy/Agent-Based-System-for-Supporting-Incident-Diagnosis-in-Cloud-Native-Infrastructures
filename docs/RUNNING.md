@@ -1,7 +1,8 @@
 # Running the full project locally
 
-This project has four pieces. The infrastructure, agent, and client form the
-incident-diagnosis flow; the client also calls the converter when a PDF is uploaded:
+This project has five pieces. The infrastructure, agent, and client form the
+incident-diagnosis flow; the client also calls the converter when a PDF is uploaded,
+and the RAG knowledge base stores the documentation the agents will search:
 
 ```
 example-infrastructure  →  agent-core  →  client
@@ -10,11 +11,19 @@ example-infrastructure  →  agent-core  →  client
 
                         doc-converter  →  client
                    (PDF → Markdown, local)   (Documentation view)
+
+                   client  ⇢  server  ⇠  agent-core
+          (Documentation view,   (RAG knowledge base:    (knowledge-base tool,
+           Send not wired yet)    Qdrant + Ollama)        not registered yet)
 ```
 
 `doc-converter` needs neither the cluster nor the agent. Start it before the client
 when you want to prepare a PDF in the Documentation view. Markdown and text files
-work without it. Document submission to a RAG backend is not implemented yet.
+work without it. `server/` (the RAG knowledge base) is independent as well: it needs
+Docker for Qdrant and Ollama for embeddings. Its HTTP API works today, but the
+panel's **Send** button and the agent's knowledge-base tool are not wired to it yet,
+so documents are submitted with curl or Swagger (see
+[TESTING.md](TESTING.md#8-test-the-rag-knowledge-base)).
 
 Alerts flow **infra → agent-core** (via webhook or MCP), and reports flow
 **agent-core → client** (via REST + SSE). Start them in that order — each
@@ -29,6 +38,8 @@ Run each long-lived service in a separate terminal opened at the repository root
 - `kubectl` on your `PATH`, pointed at the target cluster
 - An API key for at least one LLM provider (OpenAI or Anthropic), or
   [Ollama](https://ollama.com/) running locally for a free/offline option
+- For the RAG knowledge base: [uv](https://docs.astral.sh/uv/) (downloads Python 3.12
+  itself) and Ollama with the embedding model pulled: `ollama pull qwen3-embedding:0.6b`
 
 ## 1. Start the example infrastructure
 
@@ -91,7 +102,30 @@ listens. Confirm with `curl http://localhost:5001/healthz` →
 [`doc-converter/README.md`](../doc-converter/README.md) already contains the models
 and can run offline.
 
-## 4. Configure and start the client
+## 4. Start the RAG knowledge base
+
+Independent of steps 1–3; needed when you want to ingest documentation or test
+retrieval. Qdrant runs in Docker, embeddings come from Ollama on the host.
+
+```bash
+ollama pull qwen3-embedding:0.6b
+cd server
+docker compose up -d qdrant
+uv run fastapi dev app/main.py --port 8100
+```
+
+Configuration is optional: `server/.env.example` lists the `IDAR_*` variables and
+the defaults match this setup. Confirm with `curl http://localhost:8100/api/health` →
+`{"status":"ok","qdrant":"ok","embedding":"ok","embedding_model":"qwen3-embedding:0.6b","dimension":1024}`;
+Swagger is at `http://localhost:8100/docs`. Port 8100 is deliberate: 8000 is the
+Grafana MCP port-forward from step 1. To run the API in Docker instead, see
+[CONTAINERS.md](CONTAINERS.md#rag-knowledge-base-server).
+
+On Windows with Smart App Control, `uv run python -m uvicorn app.main:app --reload --port 8100`
+is the equivalent that does not depend on uv's script launchers; see the
+[known issues](../server/README.md#znane-problemy-windows--smart-app-control).
+
+## 5. Configure and start the client
 
 ```bash
 cd client
@@ -148,6 +182,22 @@ fine if no incidents have fired yet).
 | `MODELS_DIR` | empty | pre-fetched Docling weights; set it for offline operation |
 | `ENABLE_OCR` | `false` | OCR for scanned PDFs (+62 MB of weights, slower) |
 | `MAX_UPLOAD_BYTES` | `15728640` | mirrors the client's own 15 MB cap |
+
+### `server/.env`
+
+All optional; the defaults match step 4.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `IDAR_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Ollama embedding model; `qwen3-embedding:8b` is the target. Each model gets its own Qdrant collection behind the `kb_active` alias, so switching means re-ingesting documents |
+| `IDAR_OLLAMA_URL` | `http://localhost:11434` | Ollama address (`http://host.docker.internal:11434` from a container) |
+| `IDAR_QDRANT_URL` | `http://localhost:6333` | Qdrant address (`http://qdrant:6333` on the compose network) |
+| `IDAR_QUERY_INSTRUCTION` | English retrieval instruction | prefix added to queries only, never to documents (Qwen3-Embedding asymmetry) |
+| `IDAR_CHUNK_MAX_TOKENS` / `IDAR_CHUNK_OVERLAP_TOKENS` | `600` / `80` | chunk budget and overlap for prose; code blocks and tables are never split |
+| `IDAR_BREADCRUMBS` | `true` | prepend the section path (`H1 > H2`) to every chunk |
+| `IDAR_CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | comma-separated CORS allowlist; empty = allow any origin |
+| `IDAR_API_TOKEN` | empty | bearer token required on `/api/documents*` and `/api/search`; empty = no check |
+| `IDAR_STARTUP_RETRIES` / `IDAR_STARTUP_RETRY_SECONDS` | `30` / `2` | how long to wait for Ollama and Qdrant at startup |
 
 ### `client/.env`
 
