@@ -127,6 +127,10 @@ zablokowały ten plik"):
 
 - `grpcio` jest celowo przypięte w `pyproject.toml` do wersji z reputacją —
   nie podbijać bez sprawdzenia, że `import grpc` przechodzi.
+- Skrypty konsolowe w `.venv\Scripts` (`pytest.exe`, `fastapi.exe`) to
+  trampoliny uv bez reputacji — gdy SAC je zablokuje (`Failed to spawn`,
+  os error 4551), uruchamiaj moduły przez interpreter: `uv run python -m pytest`,
+  `uv run python -m uvicorn app.main:app --reload --port 8100` (zamiast `fastapi dev`).
 - Jeśli blokowany jest sam `.venv\Scripts\python.exe` (uv tworzy go jako
   unikalną trampolinę bez reputacji), odtwórz venv klasycznie:
 
@@ -143,8 +147,12 @@ zablokowały ten plik"):
 ## Testy i lint
 
 ```bash
-uv run pytest              # szybkie testy (FakeEmbedder, Qdrant :memory:)
-uv run pytest -m slow      # testy semantyczne na prawdziwym modelu (wymagają Ollamy)
+uv run python -m pytest            # szybkie testy (FakeEmbedder, Qdrant :memory:)
+uv run python -m pytest -m slow    # testy semantyczne na prawdziwym modelu (wymagają Ollamy)
 uv run ruff check .
 uv run ruff format --check .
 ```
+
+`python -m pytest` zamiast `pytest`: skrypty `.venv\Scripts\*.exe` to trampoliny
+uv bez reputacji, które Smart App Control potrafi zablokować z dnia na dzień
+(patrz niżej); interpreter i `ruff.exe` są podpisane i przechodzą.
