@@ -20,3 +20,6 @@ class Settings(BaseSettings):
         "Given a technical question about cloud-native infrastructure incidents, "
         "retrieve relevant documentation passages that help diagnose or resolve the issue"
     )
+    chunk_max_tokens: int = 600
+    chunk_overlap_tokens: int = 80
+    breadcrumbs: bool = True
