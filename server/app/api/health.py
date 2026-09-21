@@ -9,6 +9,14 @@ from app.rag.embeddings import EmbeddingProvider
 router = APIRouter()
 
 
+@router.get("/healthz", include_in_schema=False)
+def healthz() -> dict:
+    """Płytki liveness (proces żyje) — cel HEALTHCHECK obrazu i livenessProbe.
+    Zależności sprawdza /api/health; gdyby liveness biło w Ollamę, każda jej
+    zadyszka restartowałaby ten kontener."""
+    return {"status": "ok"}
+
+
 @router.get("/api/health")
 def health(
     response: Response,
