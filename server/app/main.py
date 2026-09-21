@@ -6,6 +6,7 @@ from qdrant_client import QdrantClient
 
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
+from app.api.search import router as search_router
 from app.config import Settings
 from app.rag.embeddings import EmbeddingProvider, build_embedder
 from app.rag.store import QdrantStore
@@ -38,6 +39,7 @@ def create_app(
     )
     app.include_router(health_router)
     app.include_router(documents_router)
+    app.include_router(search_router)
     return app
 
 

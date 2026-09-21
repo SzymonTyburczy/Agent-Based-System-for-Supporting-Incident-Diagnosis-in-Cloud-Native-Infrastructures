@@ -35,3 +35,34 @@ class DocumentSummary(BaseModel):
 
 class DocumentListResponse(BaseModel):
     documents: list[DocumentSummary]
+
+
+class SearchFilters(BaseModel):
+    author: str | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    top_k: int = Field(default=5, ge=1, le=20)
+    filters: SearchFilters = Field(default_factory=SearchFilters)
+    # Sensowny próg wyznaczy dopiero harness ewaluacyjny — dlatego opcjonalny.
+    score_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
+
+
+class SearchResult(BaseModel):
+    text: str
+    score: float
+    doc_id: str
+    title: str
+    section_path: list[str]
+    author: str
+    doc_date: str
+    chunk_index: int
+
+
+class SearchResponse(BaseModel):
+    results: list[SearchResult]
+    embedding_model: str
+    collection: str
