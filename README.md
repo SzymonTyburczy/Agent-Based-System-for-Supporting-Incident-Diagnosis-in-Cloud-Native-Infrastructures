@@ -24,6 +24,7 @@ Manual and automated tests (PowerShell and Bash): [`docs/TESTING.md`](docs/TESTI
 
 - **`agent-core/`** — the diagnostic agent (Python/FastAPI): receives alerts, investigates using LLM-driven tool calls (kubectl, Grafana/LGTM via MCP), and produces the structured incident reports the client displays. Setup and details: [agent-core/README.md](agent-core/README.md).
 - **`doc-converter/`** — local document → Markdown service (Python/Flask + Docling): converts uploaded PDFs for the RAG knowledge base without sending them to a third-party API. Setup and details: [doc-converter/README.md](doc-converter/README.md).
+- **`server/`** — RAG knowledge base (Python/FastAPI + Qdrant + Qwen3-Embedding via Ollama): ingests the Markdown documentation prepared in the panel, chunks and embeds it, and serves semantic search for the diagnostic agents. Setup and details: [server/README.md](server/README.md).
 - **`client/`** — IDAR web panel (React + TypeScript + Vite): document ingestion for the RAG knowledge base, and live incident views with full structured diagnostic reports. Setup and details: [client/README.md](client/README.md).
 - **`example-infrastructure/`** — demo cloud-native deployment with a configured observability stack.
 
