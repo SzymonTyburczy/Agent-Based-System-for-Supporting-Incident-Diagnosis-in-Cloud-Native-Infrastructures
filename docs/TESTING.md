@@ -262,9 +262,11 @@ Expected: health reports `engine: docling`; conversion returns non-empty `markdo
 `pages`, and `duration_ms`. If `API_TOKEN` is set, provide its Authorization header.
 In the panel, open **Documentation**, upload the PDF, inspect Preview, and edit the
 result using the Edit tab. Confirm the converter status is online. Markdown/text
-uploads should work even without the converter. **Send** still logs the payload
-instead of calling the RAG API; step 8 exercises that API directly with the same
-payload shape.
+uploads should work even without the converter. **Send** posts the document to the RAG
+knowledge base: with the RAG API running (step 8) the confirmation names the document
+and its fragment count, pressing Send twice reports it as already indexed, and with the
+API stopped the draft stays on screen with the connection error. Step 8 exercises the
+same endpoint directly.
 
 The initial host-process start may download model weights; the Docker image already
 contains the default models. An image-only PDF can return 422 with OCR disabled;
@@ -275,7 +277,8 @@ Check headings and tables as well as the HTTP status.
 
 Start the RAG API as described in [RUNNING.md](RUNNING.md#4-start-the-rag-knowledge-base)
 or [CONTAINERS.md](CONTAINERS.md#rag-knowledge-base-server). The payload is the same
-`{data, autor, tresc}` shape the panel builds. The sample text avoids Polish
+`{data, autor, tresc}` shape the panel sends from the Documentation view, so this is
+the API-level version of step 7's **Send**. The sample text avoids Polish
 diacritics on purpose: Windows PowerShell 5.1 does not send string bodies as UTF-8.
 
 **PowerShell**

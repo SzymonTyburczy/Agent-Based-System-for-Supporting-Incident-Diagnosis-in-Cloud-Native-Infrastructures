@@ -7,8 +7,10 @@ COPY . .
 # Public, browser-accessible absolute URL; Vite embeds it at build time.
 ARG VITE_AGENT_API_URL=http://localhost:8080
 ARG VITE_CONVERTER_URL=http://localhost:5001
+ARG VITE_RAG_API_URL=http://localhost:8100
 ENV VITE_AGENT_API_URL=${VITE_AGENT_API_URL} \
-    VITE_CONVERTER_URL=${VITE_CONVERTER_URL}
+    VITE_CONVERTER_URL=${VITE_CONVERTER_URL} \
+    VITE_RAG_API_URL=${VITE_RAG_API_URL}
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:stable-alpine AS runtime
