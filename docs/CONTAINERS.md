@@ -182,7 +182,7 @@ Wait for `http://localhost:5001/healthz` to respond before testing PDFs.
 Build the local panel with both service URLs:
 
 ```bash
-docker build --build-arg VITE_AGENT_API_URL=http://localhost:8090 --build-arg VITE_CONVERTER_URL=http://localhost:5001 -t idar-client:local ./client
+docker build --build-arg VITE_AGENT_API_URL=http://localhost:8090 --build-arg VITE_CONVERTER_URL=http://localhost:5001 --build-arg VITE_RAG_API_URL=http://localhost:8100 -t idar-client:local ./client
 ```
 
 An existing container continues using its old image after a build; recreate it to
@@ -238,5 +238,6 @@ docker compose up -d --build                                                    
 docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build   # everything in Docker
 ```
 
-The panel is not wired to this API yet. Once it is, its base URL will be a
-browser-reachable build argument like `VITE_AGENT_API_URL`, with the same caveats.
+The panel reaches this API through `VITE_RAG_API_URL`, a browser-reachable absolute URL
+embedded at build time like `VITE_AGENT_API_URL` — changing it means rebuilding the
+panel image. Set `IDAR_CORS_ORIGINS` to the panel's exact origin.

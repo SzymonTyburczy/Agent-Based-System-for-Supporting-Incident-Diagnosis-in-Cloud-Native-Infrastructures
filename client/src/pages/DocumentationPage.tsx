@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Check, Send } from "lucide-react";
+import { Check, Loader2, Send } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { UploadZone, type UploadStatus } from "../components/UploadZone";
@@ -11,6 +11,7 @@ import {
   PAYLOAD_DATE_FORMAT,
   type ConversionEngine,
 } from "../lib/converter";
+import { ingestDocument } from "../lib/knowledgeBase";
 import { getDefaultAuthor } from "../lib/settings";
 import {
   clearDocDraft,
@@ -39,6 +40,8 @@ export function DocumentationPage() {
     draft?.dateISO ? new Date(draft.dateISO) : new Date(),
   );
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [sending, setSending] = useState(false);
   const [rightTab, setRightTab] = useState<RightTab>("preview");
   const { flag: sent, trigger: markSent, clear: clearSent } = useTransientFlag(2500);
   // Guards against a slow conversion resolving after a newer one started.
@@ -62,6 +65,7 @@ export function DocumentationPage() {
     async (file: File) => {
       const id = ++conversionId.current;
       setError("");
+      setNotice("");
       clearSent();
       setStatus("converting");
       setFileName(file.name);
@@ -100,20 +104,38 @@ export function DocumentationPage() {
     setEngine(null);
     setMarkdown("");
     setError("");
+    setNotice("");
     setDate(new Date());
     clearSent();
     clearDocDraft();
   };
 
-  const canSubmit = status === "ready" && markdown.trim().length > 0 && author.trim().length > 0;
+  const canSubmit =
+    status === "ready" && markdown.trim().length > 0 && author.trim().length > 0 && !sending;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return;
-    // Stand-in for the future backend request: log the payload that would be
-    // sent, then clear the form.
-    console.info("Sending document payload:\n", JSON.stringify(payload, null, 2));
-    reset();
-    markSent();
+    setSending(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await ingestDocument(payload);
+      // Order matters: reset() clears the notice, so the message is set after it.
+      reset();
+      const fragments = `${result.chunkCount} fragment${result.chunkCount === 1 ? "" : "s"}`;
+      setNotice(
+        result.alreadyExists
+          ? `"${result.title}" is already in the knowledge base — identical content, nothing re-indexed.`
+          : `"${result.title}" added to the knowledge base (${fragments}).`,
+      );
+      markSent();
+    } catch (err) {
+      // The draft stays on screen on failure: the work of converting and
+      // editing the document must survive a knowledge base that is down.
+      setError(err instanceof Error ? err.message : "Failed to send the document.");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -144,6 +166,15 @@ export function DocumentationPage() {
               className="rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
             >
               {error}
+            </div>
+          )}
+
+          {notice && (
+            <div
+              role="status"
+              className="rounded-xl border border-[var(--color-success)]/40 bg-[var(--color-success)]/10 px-4 py-3 text-sm text-[var(--color-success)]"
+            >
+              {notice}
             </div>
           )}
 
@@ -184,11 +215,15 @@ export function DocumentationPage() {
             </div>
 
             <button
-              onClick={handleSubmit}
+              onClick={() => void handleSubmit()}
               disabled={!canSubmit && !sent}
               className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-2)] px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {sent ? (
+              {sending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Sending…
+                </>
+              ) : sent ? (
                 <>
                   <Check className="h-4 w-4" /> Sent
                 </>

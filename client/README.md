@@ -15,8 +15,10 @@ Diagnosis in Cloud-Native Infrastructures_.
     ```json
     { "data": "<date yyyy-MM-dd>", "autor": "<author>", "tresc": "<markdown>" }
     ```
-  - **Send** logs the payload to the browser console and clears the form — the backend
-    endpoint is not wired up yet.
+  - **Send** posts it to the RAG knowledge base (`POST /api/documents`) and clears the
+    form. The confirmation says whether the document was indexed or was already there
+    (re-sending identical content is a no-op, not a duplicate); on failure the draft
+    stays on screen with the server's explanation.
   - A draft (file name, converted content, metadata) is persisted in `localStorage`, so a
     page refresh does not lose your work.
 - **Issues** — incidents split into _pending_ and _resolved_, loaded from the diagnostic
@@ -54,6 +56,19 @@ VITE_CONVERTER_TOKEN=<only if API_TOKEN is set on the service>
 
 The sidebar shows whether the service has an optional vision model configured; clicking it
 explains where that key goes (the service's own `.env`, never here).
+
+## RAG knowledge base
+
+Documents from the Documentation view are sent to [`server`](../server/README.md), the
+RAG knowledge base. Point the client at it:
+
+```
+VITE_RAG_API_URL=http://localhost:8100
+VITE_RAG_API_TOKEN=<only if the server runs with IDAR_API_TOKEN set>
+```
+
+The server must allow this panel's origin — it ships with `IDAR_CORS_ORIGINS` covering
+`http://localhost:5173` (Vite) and `http://localhost:3000` (the panel container).
 
 ## Diagnostic agent configuration
 

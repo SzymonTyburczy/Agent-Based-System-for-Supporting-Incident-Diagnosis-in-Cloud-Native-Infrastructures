@@ -12,18 +12,17 @@ example-infrastructure  →  agent-core  →  client
                         doc-converter  →  client
                    (PDF → Markdown, local)   (Documentation view)
 
-                   client  ⇢  server  ⇠  agent-core
-          (Documentation view,   (RAG knowledge base:    (knowledge-base tool,
-           Send not wired yet)    Qdrant + Ollama)        not registered yet)
+                   client  →  server  ⇠  agent-core
+          (Documentation view:   (RAG knowledge base:    (knowledge-base tool,
+           Send ingests docs)     Qdrant + Ollama)        not registered yet)
 ```
 
 `doc-converter` needs neither the cluster nor the agent. Start it before the client
 when you want to prepare a PDF in the Documentation view. Markdown and text files
-work without it. `server/` (the RAG knowledge base) is independent as well: it needs
-Docker for Qdrant and Ollama for embeddings. Its HTTP API works today, but the
-panel's **Send** button and the agent's knowledge-base tool are not wired to it yet,
-so documents are submitted with curl or Swagger (see
-[TESTING.md](TESTING.md#8-test-the-rag-knowledge-base)).
+work without it. `server/` (the RAG knowledge base) needs Docker for Qdrant and Ollama
+for embeddings; start it before the client if you want the Documentation view's
+**Send** to work. The agent's knowledge-base tool is not wired yet, so ingested
+documents do not yet influence diagnoses.
 
 Alerts flow **infra → agent-core** (via webhook or MCP), and reports flow
 **agent-core → client** (via REST + SSE). Start them in that order — each
@@ -139,6 +138,8 @@ VITE_AGENT_API_URL=http://localhost:8090
 VITE_AGENT_API_TOKEN=<only if CLIENT_API_TOKEN is set in agent-core/.env>
 VITE_CONVERTER_URL=http://localhost:5001
 VITE_CONVERTER_TOKEN=<only if API_TOKEN is set in doc-converter/.env>
+VITE_RAG_API_URL=http://localhost:8100
+VITE_RAG_API_TOKEN=<only if IDAR_API_TOKEN is set in server/.env>
 ```
 
 ```bash
@@ -207,6 +208,8 @@ All optional; the defaults match step 4.
 | `VITE_AGENT_API_TOKEN` | only needed if `CLIENT_API_TOKEN` is set on the agent-core side |
 | `VITE_CONVERTER_URL` | base URL of the `doc-converter` service (e.g. `http://localhost:5001`) |
 | `VITE_CONVERTER_TOKEN` | only needed if `API_TOKEN` is set on the doc-converter side |
+| `VITE_RAG_API_URL` | base URL of the RAG knowledge base (e.g. `http://localhost:8100`); the Documentation view's **Send** target |
+| `VITE_RAG_API_TOKEN` | only needed if `IDAR_API_TOKEN` is set on the RAG server |
 
 Never commit real values from any `.env`. Frontend `VITE_*` values are public
 in the browser bundle; keep this development setup private.

@@ -9,6 +9,10 @@ interface ImportMetaEnv {
   readonly VITE_CONVERTER_URL?: string;
   /** Only needed if the converter was started with API_TOKEN set. */
   readonly VITE_CONVERTER_TOKEN?: string;
+  /** Base URL of the RAG knowledge base (server/), e.g. http://localhost:8100 */
+  readonly VITE_RAG_API_URL?: string;
+  /** Only needed if the RAG server was started with IDAR_API_TOKEN set. */
+  readonly VITE_RAG_API_TOKEN?: string;
 }
 
 interface ImportMeta {

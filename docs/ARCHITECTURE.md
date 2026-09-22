@@ -35,7 +35,7 @@ flowchart LR
     Nginx[Nginx container] -->|Static files| Browser
     Browser -->|PDF upload: POST /convert| Converter[Flask doc-converter / local Docling models]
     Converter -->|Markdown| Browser
-    Browser -.->|Planned: POST /api/documents| RAG[FastAPI RAG API]
+    Browser -->|Document ingest: POST /api/documents| RAG[FastAPI RAG API]
     RAG -->|Chunks + vectors| Qdrant[(Qdrant)]
     RAG -->|Embeddings| Ollama[Ollama / Qwen3-Embedding]
     Browser -->|REST: list, detail, status| API[FastAPI agent API]
@@ -161,6 +161,7 @@ Actual bindings can be checked with `docker ps`.
 | --- | --- |
 | Browser to panel | `http://localhost:3000` maps to Nginx port `8080` |
 | Browser to agent | `http://localhost:8090` maps to agent port `8080` |
+| Browser to RAG ingest | `VITE_RAG_API_URL`, embedded at build time like the other service URLs; the server's `IDAR_CORS_ORIGINS` must list the panel's origin |
 | Browser to converter | `http://localhost:5001`; separate container or host process, independent of agent availability |
 | Browser to RAG API | `http://localhost:8100` maps to RAG API port `8080` (`docker compose up -d --build` in `server/`) or a host process on the same port |
 | RAG API to Qdrant | `IDAR_QDRANT_URL=http://qdrant:6333` on the compose network; `http://localhost:6333` for a host process |
@@ -203,10 +204,11 @@ The RAG backend exists as the separate `server/` service: `POST /api/documents`
 accepts the panel's `{data, autor, tresc}` payload, chunks and embeds it into Qdrant,
 and `POST /api/search` returns the most relevant documentation fragments with their
 provenance (document, section path, author, date, score). Both integrations are
-still pending: the panel's **Send** logs the payload to the browser console instead
-of calling `/api/documents`, and the agent's tool registry has no knowledge-base
-tool yet, so investigations do not consult the documentation. The chat panel has
-been removed; RAG-backed chat remains future work. PDF conversion uses the
+The panel's **Send** posts the prepared document to `/api/documents`, so the knowledge
+base fills up through the UI. The remaining gap is on the agent side: its tool registry
+has no knowledge-base tool, so investigations still do not consult the documentation,
+and retrieval therefore has no effect on a report yet. The chat panel has been removed;
+RAG-backed chat remains future work. PDF conversion uses the
 local `doc-converter` service with Docling. Default conversion does not use an LLM
 API or send documents to an external provider. Optional figure descriptions can use
 a separately configured model endpoint. The Docker image contains the default models;

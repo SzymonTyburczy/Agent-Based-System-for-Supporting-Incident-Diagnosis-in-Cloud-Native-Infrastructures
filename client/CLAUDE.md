@@ -10,8 +10,11 @@ Main views:
   Markdown/text passes through unchanged. The converted Markdown is editable in place
   (Preview / Edit tabs) and the edit is what ends up in the payload. The result is packed as JSON `{ data, autor, tresc }` (field names
   are Polish per the agreed backend contract; `data` is a day-precision date, yyyy-MM-dd).
-  Send currently logs the payload to the console and clears the form — no backend yet.
-  The in-progress draft is persisted to localStorage.
+  Send posts it to the RAG knowledge base (`server/`, `POST /api/documents`) and clears
+  the form; the confirmation distinguishes a fresh ingest from a document the server
+  already had (`already_exists` — document ids are a hash of `tresc`). A failure keeps
+  the draft on screen, because converting and hand-editing a document is the expensive
+  part. The in-progress draft is persisted to localStorage.
 - **Issues** — split into pending and resolved, loaded from `agent-core`'s `/reports*`
   API and kept in sync over SSE. TanStack Query owns the cache: one `GET /reports` for the
   app's lifetime (`staleTime: Infinity` — the SSE stream is the freshness mechanism, not
@@ -29,11 +32,15 @@ Main views:
 Conventions:
 
 - `src/lib/` — pure logic (api, reportWire, reportsCache, issueView, converter,
-  settings, types, format); vitest tests live alongside the tested module.
+  knowledgeBase, settings, types, format); vitest tests live alongside the tested module.
 - `src/lib/api.ts` — the only place that talks to `agent-core`. Its `request()` returns
   `unknown` on purpose: `src/lib/reportWire.ts` is the single decode boundary where wire
   JSON becomes `IssueSummary` / `IssueDetail`, and both the REST and the SSE path go
   through it.
+- `src/lib/knowledgeBase.ts` — the only place that talks to the RAG server. It validates
+  the wire shape before returning an `IngestResult` and turns every failure into a
+  `KnowledgeBaseError` carrying the server's own `detail` message, so the page renders
+  that rather than a status code.
 - `src/lib/reportsCache.ts` — the query keys, the `QueryClient` defaults, and
   `cacheReport()`, which writes one report into both the detail and the list cache. Any
   new consumer of report data reads through `useReports` / `useIssueDetail`, not `fetch`.

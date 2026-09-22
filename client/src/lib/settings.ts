@@ -19,6 +19,15 @@ export function getConverterToken(): string {
   return (import.meta.env.VITE_CONVERTER_TOKEN ?? "").trim();
 }
 
+/** Base URL of the RAG knowledge base (see server/README.md). */
+export function getRagApiUrl(): string {
+  return (import.meta.env.VITE_RAG_API_URL ?? "").trim().replace(/\/+$/, "");
+}
+
+export function getRagApiToken(): string {
+  return (import.meta.env.VITE_RAG_API_TOKEN ?? "").trim();
+}
+
 export function getDefaultAuthor(): string {
   return localStorage.getItem(STORAGE_KEYS.defaultAuthor) || "";
 }
