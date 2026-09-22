@@ -10,7 +10,9 @@ MIN_CHUNK_TOKENS = 50
 
 _HEADERS_TO_SPLIT_ON = [("#", "h1"), ("##", "h2"), ("###", "h3")]
 _FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
-_H1_RE = re.compile(r"^#\s+(.+?)\s*$")
+# Dowolny poziom nagłówka, nie tylko H1: Docling zaczyna skonwertowany PDF
+# od "## Tytuł", a dokument bez H1 dostawał tytuł zastępczy "Dokument <hash>".
+_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _HEADING_ONLY_RE = re.compile(r"^#{1,6}\s+\S[^\n]*$")
 _SENTENCE_ENDS = (". ", "! ", "? ", "\n")
 
@@ -23,6 +25,8 @@ class Chunk:
 
 
 def extract_title(markdown: str) -> str | None:
+    """Pierwszy nagłówek dokumentu, niezależnie od poziomu — to, co czytający
+    widzi na górze strony."""
     in_fence = False
     for line in markdown.splitlines():
         if _FENCE_RE.match(line.strip()):
@@ -30,7 +34,7 @@ def extract_title(markdown: str) -> str | None:
             continue
         if in_fence:
             continue
-        match = _H1_RE.match(line)
+        match = _HEADING_RE.match(line)
         if match:
             return match.group(1)
     return None

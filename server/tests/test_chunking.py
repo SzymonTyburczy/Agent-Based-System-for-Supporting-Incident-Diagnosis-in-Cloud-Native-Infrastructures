@@ -147,6 +147,30 @@ def test_extract_title_reads_first_h1():
     assert extract_title(FIXTURE) == "Runbook: CrashLoopBackOff"
 
 
+def test_extract_title_accepts_any_heading_level():
+    # Docling zaczyna skonwertowany PDF od "## Tytuł" — dokument bez H1 dostawał
+    # przez to tytuł zastępczy "Dokument <hash>" na liście i w wynikach wyszukiwania.
+    assert extract_title("## Runbook: Kafka consumer lag\n\nObjawy...") == (
+        "Runbook: Kafka consumer lag"
+    )
+    assert extract_title("### Detale\n\nTreść.") == "Detale"
+
+
+def test_extract_title_takes_the_first_heading_it_meets():
+    markdown = "## Sekcja wstępna\n\nTreść.\n\n# Późniejszy H1\n\nWięcej."
+    assert extract_title(markdown) == "Sekcja wstępna"
+
+
+def test_extract_title_ignores_hash_without_space():
+    # "#tag" to nie nagłówek w CommonMark.
+    assert extract_title("#tag bez spacji\n\nTreść.") is None
+
+
+def test_extract_title_ignores_any_heading_inside_fence():
+    markdown = "```yaml\n## nie tytuł\n```\n\n## Prawdziwy tytuł\n\nTreść."
+    assert extract_title(markdown) == "Prawdziwy tytuł"
+
+
 def test_extract_title_ignores_h1_inside_fence():
     markdown = "```\n# to nie tytuł\n```\n\n# Prawdziwy tytuł\n\nTreść."
     assert extract_title(markdown) == "Prawdziwy tytuł"
