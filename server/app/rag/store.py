@@ -29,8 +29,9 @@ class DocumentMeta:
 
 
 class QdrantStore:
-    """Wszystkie operacje idą przez alias — nazwa kolekcji koduje model i wymiar,
-    a podmiana modelu to atomowe przepięcie aliasu na kolekcję nowego modelu."""
+    """Every operation goes through the alias. The collection name encodes the
+    model and the dimension, and switching models atomically moves the alias to
+    the new model's collection."""
 
     def __init__(self, client: QdrantClient, alias: str) -> None:
         self._client = client
@@ -62,8 +63,8 @@ class QdrantStore:
 
     @property
     def collection(self) -> str | None:
-        """Kolekcja, na którą wskazuje alias — raportowana w odpowiedziach API,
-        żeby w logach eksperymentów było widać, na czym liczono wynik."""
+        """The collection the alias points to. API responses report it, so
+        experiment logs show which collection a result was computed on."""
         for record in self._client.get_aliases().aliases:
             if record.alias_name == self.alias:
                 return record.collection_name

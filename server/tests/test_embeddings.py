@@ -6,7 +6,7 @@ from app.rag.embeddings import LangChainProvider, l2_normalize
 
 
 class StubInner(Embeddings):
-    """Wektory zależne od tekstu, celowo nieznormalizowane — do testów adaptera."""
+    """Text-dependent vectors, deliberately not normalized, for testing the adapter."""
 
     def __init__(self) -> None:
         self.query_calls: list[str] = []

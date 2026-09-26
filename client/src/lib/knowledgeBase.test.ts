@@ -4,8 +4,8 @@ import type { DocumentPayload } from "./types";
 
 const PAYLOAD: DocumentPayload = {
   data: "2026-09-22",
-  autor: "Jan Kowalski",
-  tresc: "# Runbook: CrashLoopBackOff\n\n## Diagnoza\n\nSprawdz logi kontenera.",
+  autor: "Jane Doe",
+  tresc: "# Runbook: CrashLoopBackOff\n\n## Diagnosis\n\nCheck the container logs.",
 };
 
 function mockServer(body: unknown, ok = true, status = 200) {
