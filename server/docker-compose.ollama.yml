@@ -1,16 +1,17 @@
-# Nakładka: Ollama w kontenerze zamiast na hoście (Linux/EC2 albo gdy nie chcesz
-# instalować Ollamy). Model jest dociągany jednorazowym serwisem ollama-pull,
-# API startuje dopiero po jego sukcesie.
+# Overlay: Ollama in a container instead of on the host (Linux/EC2, or when you
+# do not want to install Ollama). The one-off ollama-pull service pulls the
+# model, and the API starts only after it succeeds.
 #   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build
 services:
   ollama:
     image: ollama/ollama:0.34.2
     volumes:
       - ollama_models:/root/.ollama
-    # Port celowo niepublikowany (kolidowałby z Ollamą na hoście); CLI:
+    # The port is not published on purpose (it would clash with Ollama on the
+    # host); CLI:
     #   docker compose exec ollama ollama list
-    # GPU NVIDIA (Docker Desktop: WSL2 + sterownik NVIDIA; Linux: NVIDIA
-    # Container Toolkit). Bez GPU 0.6b działa na CPU; 8b jest wyraźnie wolniejszy.
+    # NVIDIA GPU (Docker Desktop: WSL2 + the NVIDIA driver; Linux: NVIDIA
+    # Container Toolkit). Without a GPU 0.6b runs on the CPU; 8b is much slower.
     # deploy:
     #   resources:
     #     reservations:
@@ -34,7 +35,7 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["ollama", "pull"]
-    # Ten sam model, którego używa API (IDAR_EMBEDDING_MODEL z .env lub domyślny).
+    # The model the API uses (IDAR_EMBEDDING_MODEL from .env, or the default).
     command: ["${IDAR_EMBEDDING_MODEL:-qwen3-embedding:0.6b}"]
     restart: "no"
 
