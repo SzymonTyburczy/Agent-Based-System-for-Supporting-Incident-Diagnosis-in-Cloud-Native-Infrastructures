@@ -25,7 +25,7 @@ metadata:
 data:
   # Space-separated. Add a chat model here (for example llama3.1) if agent-core
   # runs with LLM_PROVIDER=ollama against this server.
-  OLLAMA_PULL_MODELS: "qwen3-embedding:0.6b"
+  OLLAMA_PULL_MODELS: "qwen3-embedding:0.6b llama3.2:3b"
   # Keep models in memory. rag-server's readiness probe runs an embedding on
   # every check; with the default 5-minute unload the first probe after an idle
   # period waits for a reload and can flip the Pod to not-ready.
@@ -182,7 +182,7 @@ spec:
               cpu: 500m
               memory: 1Gi
             limits:
-              cpu: "2"
+              cpu: "1.5"
               memory: 4Gi
           securityContext:
             allowPrivilegeEscalation: false

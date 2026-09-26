@@ -84,8 +84,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: doc-converter
-          image: idar-doc-converter:local
-          imagePullPolicy: IfNotPresent
+          image: wpawlina2137/idar-doc-converter:v0.1.0
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: doc-converter-config

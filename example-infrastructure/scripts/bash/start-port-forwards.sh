@@ -11,6 +11,7 @@ nohup bash -c 'while true; do kubectl port-forward svc/prom-stack-grafana 8081:8
 nohup bash -c 'while true; do kubectl port-forward svc/prom-stack-kube-prometheus-prometheus 9090:9090 -n observability >/dev/null 2>&1; sleep 2; done' >/dev/null 2>&1 &
 nohup bash -c 'while true; do kubectl port-forward svc/prom-stack-kube-prometheus-alertmanager 9093:9093 -n observability >/dev/null 2>&1; sleep 2; done' >/dev/null 2>&1 &
 nohup bash -c 'while true; do kubectl port-forward svc/grafana-mcp 8000:8000 -n observability >/dev/null 2>&1; sleep 2; done' >/dev/null 2>&1 &
+nohup bash -c 'while true; do kubectl port-forward svc/idar-client 3000:8080 -n idar >/dev/null 2>&1; sleep 2; done' >/dev/null 2>&1 &
 
 echo ""
 echo "Active Port Forwards running in background:"
@@ -19,3 +20,4 @@ echo "  OpenTelemetry Demo Store:   http://localhost:8080"
 echo "  Prometheus API:             http://localhost:9090"
 echo "  Alertmanager UI:            http://localhost:9093"
 echo "  Grafana MCP Server (SSE):   http://localhost:8000/sse (--disable-write)"
+echo "  IDAR Client UI:             http://localhost:3000"

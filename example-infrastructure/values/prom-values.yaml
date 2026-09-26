@@ -52,7 +52,7 @@ alertmanager:
     global:
       resolve_timeout: 5m
     route:
-      receiver: agent-webhook
+      receiver: "null"
       group_by: ['namespace', 'alertname', 'job']
       group_wait: 10s
       group_interval: 1m
@@ -78,7 +78,7 @@ alertmanager:
       - name: "null"
       - name: agent-webhook
         webhook_configs:
-          - url: http://host.docker.internal:8090/alerts/webhook
+          - url: http://agent-core.idar.svc.cluster.local:8080/alerts/webhook
             send_resolved: true
             http_config:
               authorization:
