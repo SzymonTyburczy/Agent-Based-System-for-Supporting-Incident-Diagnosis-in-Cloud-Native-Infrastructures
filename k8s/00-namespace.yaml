@@ -1,0 +1,16 @@
+# Namespace for every IDAR workload (docs/CLUSTER.md). The monitored cluster's
+# own stacks stay where they are: observability/ and otel-demo/.
+#
+# Pod Security Admission enforces the "restricted" profile: every IDAR
+# container runs as non-root, without privilege escalation, with all Linux
+# capabilities dropped and the runtime's default seccomp profile. A manifest
+# that forgets one of those is rejected at apply time instead of running with
+# more rights than it needs.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: idar
+  labels:
+    app.kubernetes.io/part-of: idar
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
