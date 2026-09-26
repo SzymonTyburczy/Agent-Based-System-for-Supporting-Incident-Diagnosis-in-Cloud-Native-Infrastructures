@@ -1,0 +1,108 @@
+# idar-client — the web panel: the React build served by unprivileged Nginx.
+#
+# Stateless, so two replicas behind the Service (docs/CLUSTER.md: two once an
+# Ingress fronts it). Nginx serves static files only; it is not a proxy. The
+# browser calls agent-core, doc-converter and rag-server directly, at the URLs
+# baked into the bundle at build time:
+#
+#   docker build \
+#     --build-arg VITE_AGENT_API_URL=https://agent.idar.example.com \
+#     --build-arg VITE_CONVERTER_URL=https://converter.idar.example.com \
+#     --build-arg VITE_RAG_API_URL=https://rag.idar.example.com \
+#     -t idar-client:local ./client
+#
+# Those are browser-reachable addresses, never *.svc.cluster.local names, and
+# nothing in this manifest can change them after the build. Each of the three
+# services must list this panel's origin in its CORS setting
+# (CLIENT_ALLOWED_ORIGINS, ALLOWED_ORIGINS, IDAR_CORS_ORIGINS).
+#
+# Image: build and load it as described in k8s/README.md.
+#
+# Apply after 00-namespace.yaml:  kubectl apply -f k8s/client.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: idar-client
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: idar-client
+    app.kubernetes.io/component: web-panel
+    app.kubernetes.io/part-of: idar
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: idar-client
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idar-client
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: idar-client
+    app.kubernetes.io/component: web-panel
+    app.kubernetes.io/part-of: idar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: idar-client
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: idar-client
+        app.kubernetes.io/component: web-panel
+        app.kubernetes.io/part-of: idar
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # The nginx user of nginxinc/nginx-unprivileged.
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: idar-client
+          image: idar-client:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # The unprivileged image keeps its pid file and temp paths in /tmp.
+            # Its entrypoint also tries to add an IPv6 listener to
+            # default.conf and logs "can not modify ... (read-only file
+            # system?)" — expected, it skips that step and serves on 8080.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
