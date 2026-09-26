@@ -1,0 +1,228 @@
+# Ollama — embedding engine for the RAG knowledge base (server/).
+#
+# The model weights live on a ReadWriteOnce volume, so a restart does not
+# download them again. An init container pulls every model listed in
+# OLLAMA_PULL_MODELS before the server starts: when the Pod is Ready, the model
+# rag-server asks for is already on disk. With no network on a later restart,
+# a model that is already present is accepted and the Pod still starts.
+#
+# OLLAMA_PULL_MODELS must include rag-server's IDAR_EMBEDDING_MODEL
+# (k8s/rag-server.yaml). Switching to qwen3-embedding:8b: change both, raise the
+# resources below to 2/4 CPU and 8Gi/12Gi (docs/CLUSTER.md), and prefer a GPU node.
+#
+# The official image runs as root; here it runs as UID 10004 with HOME on an
+# emptyDir and the models on the volume, so the image stays read-only.
+#
+# Apply after 00-namespace.yaml:  kubectl apply -f k8s/ollama.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ollama-config
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/part-of: idar
+data:
+  # Space-separated. Add a chat model here (for example llama3.1) if agent-core
+  # runs with LLM_PROVIDER=ollama against this server.
+  OLLAMA_PULL_MODELS: "qwen3-embedding:0.6b"
+  # Keep models in memory. rag-server's readiness probe runs an embedding on
+  # every check; with the default 5-minute unload the first probe after an idle
+  # period waits for a reload and can flip the Pod to not-ready.
+  OLLAMA_KEEP_ALIVE: "-1"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/part-of: idar
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      # qwen3-embedding:0.6b is ~0.6 GB, 8b ~5 GB.
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/component: embedding-engine
+    app.kubernetes.io/part-of: idar
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ollama
+  ports:
+    - name: http
+      port: 11434
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/component: embedding-engine
+    app.kubernetes.io/part-of: idar
+spec:
+  replicas: 1
+  # ReadWriteOnce volume: the old Pod must release it before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ollama
+        app.kubernetes.io/component: embedding-engine
+        app.kubernetes.io/part-of: idar
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10004
+        runAsGroup: 10004
+        fsGroup: 10004
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: pull-models
+          image: ollama/ollama:0.34.2
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ollama serve &
+              server=$!
+              for i in $(seq 1 60); do ollama list >/dev/null 2>&1 && break; sleep 1; done
+              for model in $OLLAMA_PULL_MODELS; do
+                echo "pulling $model"
+                ollama pull "$model" || ollama show "$model" >/dev/null 2>&1 || exit 1
+              done
+              kill "$server"
+          env:
+            - name: OLLAMA_PULL_MODELS
+              valueFrom:
+                configMapKeyRef:
+                  name: ollama-config
+                  key: OLLAMA_PULL_MODELS
+            - name: OLLAMA_HOST
+              value: 127.0.0.1:11434
+            - name: OLLAMA_MODELS
+              value: /models
+            - name: HOME
+              value: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.34.2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OLLAMA_HOST
+              value: 0.0.0.0:11434
+            - name: OLLAMA_MODELS
+              value: /models
+            - name: HOME
+              value: /tmp
+            - name: OLLAMA_KEEP_ALIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: ollama-config
+                  key: OLLAMA_KEEP_ALIVE
+          ports:
+            - name: http
+              containerPort: 11434
+          startupProbe:
+            httpGet:
+              path: /api/version
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /api/version
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/version
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            # Sized for qwen3-embedding:0.6b; see the header for 8b.
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ollama-models
+        - name: tmp
+          emptyDir: {}
+---
+# Ollama has no authentication. rag-server needs it for embeddings; agent-core
+# only when it runs with LLM_PROVIDER=ollama against this server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ollama
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/part-of: idar
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rag-server
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: agent-core
+      ports:
+        - port: 11434
