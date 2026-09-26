@@ -1,0 +1,230 @@
+# agent-core — the diagnostic agent: Alertmanager webhook, investigation
+# worker and the reports API the panel reads.
+#
+# One replica with the Recreate strategy: the investigation queue and the SSE
+# broadcaster live in process memory and reports are a local SQLite file, so
+# two Pods must never run at once (docs/CLUSTER.md, docs/CONTAINERS.md).
+#
+# Requires the Grafana MCP server to accept in-cluster callers: --allowed-hosts
+# must list grafana-mcp.observability.svc.cluster.local:8000
+# (example-infrastructure/values/grafana-mcp-values.yaml). Without it the MCP
+# server answers 403 and the agent exits during startup.
+#
+# kubectl inside the Pod uses the ServiceAccount below — read-only access to
+# pods and events in otel-demo, matching KUBECTL_ALLOWED_NAMESPACES. The
+# application allowlist is not a permission grant; RBAC is.
+#
+# Secrets (optional as a whole; set the keys your configuration needs):
+#   kubectl create secret generic agent-core-secrets -n idar \
+#     --from-literal=OPENAI_API_KEY=...            # LLM_PROVIDER=openai
+#     --from-literal=ANTHROPIC_API_KEY=...         # LLM_PROVIDER=anthropic
+#     --from-literal=WEBHOOK_SHARED_SECRET=...     # must match Alertmanager's credentials
+#     --from-literal=CLIENT_API_TOKEN=...          # bearer token for /reports*
+# The default provider is openai, whose client needs the key at construction:
+# without OPENAI_API_KEY the Pod exits during startup with
+# "openai.OpenAIError: Missing credentials" and restarts until the Secret exists.
+#
+# Alertmanager in example-infrastructure sends to the agent on the host
+# (host.docker.internal:8090). To route alerts to this Pod instead, point the
+# agent-webhook receiver in prom-values.yaml at
+# http://agent-core.idar.svc.cluster.local:8080/alerts/webhook.
+#
+# Image: build and load it as described in k8s/README.md
+# (docker build --build-arg KUBECTL_VERSION=<cluster version> -t idar-agent-core:local ./agent-core).
+#
+# Apply after 00-namespace.yaml:  kubectl apply -f k8s/agent-core.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-core
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: agent-core
+    app.kubernetes.io/part-of: idar
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-core-reader
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/name: agent-core
+    app.kubernetes.io/part-of: idar
+rules:
+  # kubectl_get_pods and kubectl_pod_diagnostics (agent_core/tools/cli_tools.py).
+  - apiGroups: [""]
+    resources: ["pods", "events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-core-reader
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/name: agent-core
+    app.kubernetes.io/part-of: idar
+subjects:
+  - kind: ServiceAccount
+    name: agent-core
+    namespace: idar
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-core-reader
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-core-config
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: agent-core
+    app.kubernetes.io/part-of: idar
+data:
+  # Same defaults as agent-core/.env.example. For a keyless setup use
+  # LLM_PROVIDER=ollama with OLLAMA_BASE_URL=http://ollama:11434 and add the
+  # model to OLLAMA_PULL_MODELS in k8s/ollama.yaml.
+  LLM_PROVIDER: openai
+  OPENAI_MODEL: gpt-4.1
+  ANTHROPIC_MODEL: claude-sonnet-4-6
+  OLLAMA_BASE_URL: http://ollama:11434
+  OLLAMA_MODEL: llama3.1
+  MCP_GRAFANA_URL: http://grafana-mcp.observability.svc.cluster.local:8000/sse
+  MCP_GRAFANA_TOOL_PREFIX: grafana_
+  MCP_GRAFANA_TOOL_ALLOWLIST: list_datasources,check_datasources_health,query_prometheus,query_prometheus_histogram,list_prometheus_metric_names,list_prometheus_metric_metadata,list_prometheus_label_names,list_prometheus_label_values,query_loki_logs,query_loki_stats,query_loki_patterns,analyze_loki_labels,list_loki_label_names,list_loki_label_values,search_dashboards,get_dashboard_by_uid,get_dashboard_panel_queries,get_dashboard_summary,alerting_manage_rules
+  AGENT_MAX_ITERATIONS: "12"
+  # Keep in step with the Role above: a namespace listed here but not granted
+  # there fails with Forbidden.
+  KUBECTL_ALLOWED_NAMESPACES: otel-demo
+  # The panel's exact origin as the browser sees it; set the real HTTPS origin
+  # on EC2. localhost:3000 is the local panel port from docs/CONTAINERS.md.
+  CLIENT_ALLOWED_ORIGINS: http://localhost:3000
+  # On the volume below.
+  REPORT_OUTPUT_DIR: /data/reports
+  REPORTS_DB_PATH: /data/reports/reports.db
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agent-core-data
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: agent-core
+    app.kubernetes.io/part-of: idar
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-core
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: agent-core
+    app.kubernetes.io/component: diagnostic-agent
+    app.kubernetes.io/part-of: idar
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: agent-core
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-core
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: agent-core
+    app.kubernetes.io/component: diagnostic-agent
+    app.kubernetes.io/part-of: idar
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-core
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-core
+        app.kubernetes.io/component: diagnostic-agent
+        app.kubernetes.io/part-of: idar
+    spec:
+      serviceAccountName: agent-core
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent-core
+          image: idar-agent-core:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: agent-core-config
+            - secretRef:
+                name: agent-core-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            # The agent connects to MCP and discovers its tools before it
+            # opens the port.
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # kubectl keeps its discovery cache under $HOME/.kube.
+            - name: home
+              mountPath: /home/agent
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: agent-core-data
+        - name: home
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
