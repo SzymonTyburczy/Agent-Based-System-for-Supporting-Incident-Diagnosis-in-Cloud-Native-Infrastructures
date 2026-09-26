@@ -1,0 +1,143 @@
+# doc-converter — PDF to Markdown for the panel's Documentation view (Docling).
+#
+# The Docling models are baked into the image, so the Pod needs no volume and
+# no model downloads at runtime. A conversion can take several GiB of memory,
+# which is why the requests below are large and the strategy is Recreate: a
+# rolling update would briefly run two copies side by side (docs/CLUSTER.md).
+#
+# Gunicorn runs one worker with one thread, so /healthz waits behind a running
+# conversion. The liveness probe therefore tolerates longer than Gunicorn's own
+# timeout (CONVERSION_TIMEOUT_SECONDS + 60 = 180 s by default); a shorter one
+# would restart the Pod in the middle of a large PDF. Readiness drops the Pod
+# from the Service while it is busy, which is what one worker can offer anyway.
+#
+# Image: build and load it as described in k8s/README.md
+# (docker build -t idar-doc-converter:local ./doc-converter).
+#
+# Optional Secret: when it exists, /convert requires "Authorization: Bearer <token>":
+#   kubectl create secret generic doc-converter-secrets -n idar --from-literal=API_TOKEN=...
+#
+# Apply after 00-namespace.yaml:  kubectl apply -f k8s/doc-converter.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doc-converter-config
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: doc-converter
+    app.kubernetes.io/part-of: idar
+data:
+  # The panel's exact origin as the browser sees it; set the real HTTPS origin
+  # on EC2. localhost:3000 is the local panel port from docs/CONTAINERS.md.
+  ALLOWED_ORIGINS: http://localhost:3000
+  # Default. A 147 s conversion has been observed on a node under memory
+  # pressure; raising this also lengthens Gunicorn's timeout, so keep the
+  # liveness tolerance below above the new value + 60 s.
+  CONVERSION_TIMEOUT_SECONDS: "120"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: doc-converter
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: doc-converter
+    app.kubernetes.io/component: document-converter
+    app.kubernetes.io/part-of: idar
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: doc-converter
+  ports:
+    - name: http
+      port: 5001
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doc-converter
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: doc-converter
+    app.kubernetes.io/component: document-converter
+    app.kubernetes.io/part-of: idar
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: doc-converter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: doc-converter
+        app.kubernetes.io/component: document-converter
+        app.kubernetes.io/part-of: idar
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: doc-converter
+          image: idar-doc-converter:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: doc-converter-config
+            - secretRef:
+                name: doc-converter-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 5001
+          startupProbe:
+            # Loading the layout and table models is CPU and disk heavy:
+            # at least three minutes (docs/CLUSTER.md); 30 x 10 s = 5 min.
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            # 10 x 30 s = 300 s > Gunicorn's 180 s timeout; see the header.
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "2"
+              memory: 6Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            # Gunicorn keeps its control socket in $HOME/.gunicorn and the
+            # Python libraries their caches under $HOME.
+            - name: home
+              mountPath: /home/converter
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: home
+          emptyDir: {}
