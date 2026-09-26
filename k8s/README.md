@@ -13,6 +13,7 @@ starts with a header describing what it needs and why it is shaped the way it is
 | `doc-converter.yaml` | PDF → Markdown | namespace |
 | `agent-core.yaml` | diagnostic agent + RBAC in `otel-demo` | Grafana MCP accepting in-cluster callers, an LLM |
 | `client.yaml` | web panel | the three APIs above, at browser-reachable URLs |
+| `ingress.yaml` | public entry point: the panel and the three APIs, one host each (template, placeholder hosts) | an Ingress controller (Traefik), DNS, TLS |
 
 The monitoring stack and the diagnosed workloads are not here: they come from
 `example-infrastructure/` (Helm charts in namespaces `observability` and `otel-demo`).
@@ -27,7 +28,8 @@ kubectl get pods -n idar -w
 `00-namespace.yaml` sorts first, so one command is enough. The first deploy takes a
 few minutes: Ollama pulls the embedding model before it reports ready, and
 rag-server waits for it (its startup window is sized for that). Nothing needs to be
-started in a particular order.
+started in a particular order. `ingress.yaml` is applied too, but with its placeholder
+hosts it routes nothing until you configure it (see [Ingress](#ingress)).
 
 ## Images
 
@@ -102,10 +104,21 @@ kubectl create secret generic agent-core-secrets -n idar --from-literal=OPENAI_A
 
 Changing a ConfigMap or Secret does not reach running Pods: restart the Deployment.
 
+## Ingress
+
+`ingress.yaml` exposes the panel and the three APIs it calls, one host each, through
+Traefik. The host names are placeholders (`idar.example.com`); the file's header
+lists what goes with them: the panel built with the public URLs, the panel's origin
+in the three CORS settings, a certificate in Secret `idar-tls`, and DNS. Only the
+paths the panel calls are routed, so the Alertmanager webhook, RAG search and the
+API docs stay reachable from inside the cluster only.
+
+The panel has no login. Until an authentication proxy is in front, limit who can
+reach the controller (an EC2 security group open to the team's addresses, or a VPN).
+
 ## Local access
 
-There is no Ingress yet (it needs real host names, TLS and a controller). Use
-port-forwards on the ports the panel was built with:
+Without an Ingress controller, use port-forwards on the ports the panel was built with:
 
 ```bash
 kubectl port-forward -n idar svc/idar-client 3000:8080
