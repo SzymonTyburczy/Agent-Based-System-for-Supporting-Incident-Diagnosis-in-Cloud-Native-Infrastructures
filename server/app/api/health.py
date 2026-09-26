@@ -11,9 +11,9 @@ router = APIRouter()
 
 @router.get("/healthz", include_in_schema=False)
 def healthz() -> dict:
-    """Płytki liveness (proces żyje) — cel HEALTHCHECK obrazu i livenessProbe.
-    Zależności sprawdza /api/health; gdyby liveness biło w Ollamę, każda jej
-    zadyszka restartowałaby ten kontener."""
+    """Shallow liveness (the process is up), used by the image HEALTHCHECK and the
+    livenessProbe. Dependencies are checked by /api/health; if liveness called
+    Ollama, every hiccup of Ollama would restart this container."""
     return {"status": "ok"}
 
 

@@ -103,7 +103,7 @@ def test_with_retries_raises_the_last_error_when_exhausted():
 
 def test_startup_retries_apply_to_qdrant_collection_setup():
     class FlakyQdrant:
-        """Udaje Qdranta, który odpowiada dopiero od trzeciego zapytania."""
+        """Pretends to be a Qdrant that answers only from the third call on."""
 
         def __init__(self):
             self.inner = QdrantClient(":memory:")

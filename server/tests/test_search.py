@@ -4,30 +4,48 @@ from qdrant_client import QdrantClient
 
 DOC_PODS = (
     "# Runbook: CrashLoopBackOff\n\n"
-    "Pod restartuje się w pętli. Sprawdź logi kontenera poleceniem kubectl logs."
+    "The pod restarts in a loop. Check the container logs with kubectl logs."
 )
 DOC_GRAFANA = (
     "# Runbook: Grafana datasource\n\n"
-    "Dashboard nie pokazuje danych. Sprawdź konfigurację datasource Prometheus w Grafanie."
+    "The dashboard shows no data. Check the Prometheus datasource configuration in Grafana."
 )
 DOC_OOM = (
     "# Runbook: OOMKilled\n\n"
-    "Kontener zabity przez limit pamięci. Zwiększ limity memory w manifeście wdrożenia."
+    "The container was killed by its memory limit. Raise the memory limits in the deployment."
 )
 
-QUERY_PODS = "restartuje logi kontenera kubectl"
+QUERY_PODS = "restarts container logs kubectl"
+
+# Polish on purpose: runbooks in the knowledge base may be written in Polish, so the
+# real model must match a Polish question to the right one as well.
+RUNBOOKS_PL = {
+    "pods": (
+        "# Runbook: CrashLoopBackOff\n\n"
+        "Pod restartuje się w pętli. Sprawdź logi kontenera poleceniem kubectl logs."
+    ),
+    "grafana": (
+        "# Runbook: Grafana datasource\n\n"
+        "Dashboard nie pokazuje danych. Sprawdź konfigurację datasource Prometheus w Grafanie."
+    ),
+    "oom": (
+        "# Runbook: OOMKilled\n\n"
+        "Kontener zabity przez limit pamięci. Zwiększ limity memory w manifeście wdrożenia."
+    ),
+}
+RUNBOOKS_EN = {"pods": DOC_PODS, "grafana": DOC_GRAFANA, "oom": DOC_OOM}
 
 
 def seed(client: TestClient) -> dict[str, str]:
     documents = {
-        "pods": ("Ala", "2026-08-01", DOC_PODS),
-        "grafana": ("Ola", "2026-08-10", DOC_GRAFANA),
-        "oom": ("Ala", "2026-08-20", DOC_OOM),
+        "pods": ("Alice", "2026-08-01", DOC_PODS),
+        "grafana": ("Bob", "2026-08-10", DOC_GRAFANA),
+        "oom": ("Alice", "2026-08-20", DOC_OOM),
     }
     ids: dict[str, str] = {}
-    for key, (autor, data, tresc) in documents.items():
+    for key, (author, date, content) in documents.items():
         response = client.post(
-            "/api/documents", json={"data": data, "autor": autor, "tresc": tresc}
+            "/api/documents", json={"data": date, "autor": author, "tresc": content}
         )
         assert response.status_code == 201
         ids[key] = response.json()["doc_id"]
@@ -64,7 +82,7 @@ def test_top_k_limits_results(client: TestClient):
 def test_author_filter_narrows_results(client: TestClient):
     ids = seed(client)
 
-    results = search(client, filters={"author": "Ola"})["results"]
+    results = search(client, filters={"author": "Bob"})["results"]
 
     assert results
     assert all(r["doc_id"] == ids["grafana"] for r in results)
@@ -92,7 +110,15 @@ def test_search_request_validation(client: TestClient):
 
 
 @pytest.mark.slow
-def test_polish_question_hits_the_right_runbook_semantically():
+@pytest.mark.parametrize(
+    ("runbooks", "question"),
+    [
+        (RUNBOOKS_EN, "the pod keeps restarting, how do I find the cause?"),
+        (RUNBOOKS_PL, "pod ciągle się restartuje, jak znaleźć przyczynę?"),
+    ],
+    ids=["english", "polish"],
+)
+def test_question_hits_the_right_runbook_semantically(runbooks: dict[str, str], question: str):
     from app.config import Settings
     from app.rag.embeddings import build_embedder
     from app.rag.ingest import ingest_document
@@ -104,18 +130,18 @@ def test_polish_question_hits_the_right_runbook_semantically():
     store.ensure_collection(embedder.model_id, embedder.dimension)
 
     ids = {}
-    for key, tresc in (("pods", DOC_PODS), ("grafana", DOC_GRAFANA), ("oom", DOC_OOM)):
+    for key, content in runbooks.items():
         result = ingest_document(
-            data="2026-08-21",
-            autor="Test",
-            tresc=tresc,
+            doc_date="2026-08-21",
+            author="Test",
+            content=content,
             store=store,
             embedder=embedder,
             settings=settings,
         )
         ids[key] = result.doc_id
 
-    vector = embedder.embed_query("pod ciągle się restartuje, jak znaleźć przyczynę?")
+    vector = embedder.embed_query(question)
     points = store.query(vector, top_k=3)
 
     assert points

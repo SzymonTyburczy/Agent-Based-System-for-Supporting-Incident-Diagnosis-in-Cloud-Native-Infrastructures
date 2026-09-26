@@ -6,11 +6,12 @@ from qdrant_client import QdrantClient
 from app.rag.ids import doc_id, point_id
 from app.rag.store import QdrantStore, collection_name
 
-DOC_A = "# Runbook A\n\nPod restartuje się w pętli CrashLoopBackOff. Sprawdź logi kontenera."
+DOC_A = "# Runbook A\n\nThe pod restarts in a CrashLoopBackOff loop. Check the container logs."
 
 
-def payload(tresc: str = DOC_A, autor: str = "Jan Kowalski", data: str = "2026-08-21") -> dict:
-    return {"data": data, "autor": autor, "tresc": tresc}
+def payload(content: str = DOC_A, author: str = "Jane Doe", date: str = "2026-08-21") -> dict:
+    # The team's frozen wire contract (app/schemas.py).
+    return {"data": date, "autor": author, "tresc": content}
 
 
 def test_doc_and_point_ids_are_deterministic():
@@ -34,7 +35,7 @@ def test_alias_flips_to_new_model_collection():
 
     second = store.ensure_collection("model-b", 16)
     assert store.collection == second
-    # Stara kolekcja zostaje do porównań A/B — alias tylko się przepina.
+    # The old collection stays for A/B comparisons; only the alias moves.
     assert client.collection_exists(first)
 
 
@@ -52,14 +53,14 @@ def test_ingest_creates_document_and_lists_it(client: TestClient):
     assert len(listing["documents"]) == 1
     document = listing["documents"][0]
     assert document["doc_id"] == body["doc_id"]
-    assert document["author"] == "Jan Kowalski"
+    assert document["author"] == "Jane Doe"
     assert document["doc_date"] == "2026-08-21"
     assert document["chunk_count"] == body["chunk_count"]
 
 
 def test_reingest_same_content_is_idempotent(client: TestClient):
     first = client.post("/api/documents", json=payload())
-    second = client.post("/api/documents", json=payload(autor="Ktoś Inny"))
+    second = client.post("/api/documents", json=payload(author="Someone Else"))
 
     assert first.status_code == 201
     assert second.status_code == 200
@@ -82,13 +83,19 @@ def test_delete_document(client: TestClient):
 
 def test_rejects_invalid_payloads(client: TestClient):
     assert client.post("/api/documents", json={"autor": "X", "tresc": "T"}).status_code == 422
-    assert client.post("/api/documents", json=payload(data="21-08-2026")).status_code == 422
-    assert client.post("/api/documents", json=payload(tresc="   ")).status_code == 422
-    assert client.post("/api/documents", json=payload(autor="  ")).status_code == 422
+    assert client.post("/api/documents", json=payload(date="21-08-2026")).status_code == 422
+    assert client.post("/api/documents", json=payload(content="   ")).status_code == 422
+    assert client.post("/api/documents", json=payload(author="  ")).status_code == 422
+
+
+def test_payload_accepts_only_the_contract_keys(client: TestClient):
+    body = {"doc_date": "2026-08-21", "author": "Jane Doe", "content": DOC_A}
+
+    assert client.post("/api/documents", json=body).status_code == 422
 
 
 def test_heading_only_document_is_rejected(client: TestClient):
-    response = client.post("/api/documents", json=payload(tresc="# Tylko nagłówek"))
+    response = client.post("/api/documents", json=payload(content="# Just a heading"))
 
     assert response.status_code == 422
     assert "no indexable content" in response.json()["detail"]

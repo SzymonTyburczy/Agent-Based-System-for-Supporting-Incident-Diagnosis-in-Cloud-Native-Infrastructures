@@ -4,9 +4,9 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.141.1",
-    # Przypięte: DLL cygrpc ze świeżych wydań grpcio bywa blokowana przez
-    # Smart App Control ("Zasady kontroli aplikacji zablokowały ten plik"),
-    # zanim wheel zbuduje reputację; 1.71.0 ją ma i przechodzi.
+    # Pinned: Smart App Control can block the cygrpc DLL of a fresh grpcio
+    # release ("An Application Control policy has blocked this file") until the
+    # wheel builds a reputation; 1.71.0 has one and passes.
     "grpcio==1.71.0",
     "langchain-ollama>=1.1.0",
     "langchain-text-splitters>=1.1.2",
@@ -15,10 +15,9 @@ dependencies = [
 ]
 
 [tool.uv]
-# Tylko CPython zarządzany przez uv. Python z Microsoft Store (App Execution
-# Alias) działa w kontenerze MSIX, którego polityka kontroli aplikacji blokuje
-# niepodpisane natywne DLL-e (grpc/cygrpc) — DLL load failed przy imporcie
-# qdrant_client.
+# uv-managed CPython only. Python from the Microsoft Store (App Execution Alias)
+# runs in an MSIX container whose application control policy blocks unsigned
+# native DLLs (grpc/cygrpc): "DLL load failed" when importing qdrant_client.
 python-preference = "only-managed"
 
 [dependency-groups]
@@ -38,6 +37,6 @@ testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-m 'not slow and not integration'"
 markers = [
-    "slow: testy z prawdziwym modelem embeddingów (wymagają uruchomionej Ollamy)",
-    "integration: testy przeciwko Qdrantowi z docker compose",
+    "slow: tests with the real embedding model (need a running Ollama)",
+    "integration: tests against Qdrant from docker compose",
 ]

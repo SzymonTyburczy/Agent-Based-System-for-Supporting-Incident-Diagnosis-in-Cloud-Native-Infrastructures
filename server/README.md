@@ -1,17 +1,16 @@
 # IDAR RAG server
 
-Backend bazy wiedzy RAG: ingest dokumentacji (chunking + embeddingi) do Qdranta
-i wyszukiwanie semantyczne dla agentów diagnostycznych.
+Backend of the RAG knowledge base: ingests documentation (chunking + embeddings)
+into Qdrant and serves semantic search to the diagnostic agents.
 
-Kontekst projektowy: [plan architektoniczny](../docs/rag-vector-store-plan.md)
-i [roadmapa wykonawcza](../docs/rag-implementation-roadmap.md).
+Where it fits in the system: [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md).
 
-## Wymagania
+## Requirements
 
-- [uv](https://docs.astral.sh/uv/) (Python 3.12 dociąga sam)
-- [Ollama](https://ollama.com/) z modelem embeddingów:
+- [uv](https://docs.astral.sh/uv/) (it fetches Python 3.12 itself)
+- [Ollama](https://ollama.com/) with the embedding model:
   `ollama pull qwen3-embedding:0.6b`
-- Docker (Qdrant przez `docker compose`)
+- Docker (Qdrant through `docker compose`)
 
 ## Start
 
@@ -20,73 +19,74 @@ docker compose up -d qdrant
 uv run fastapi dev app/main.py --port 8100
 ```
 
-Port 8100 celowo, nie domyślne 8000 — w środowisku demo port 8000 zajmuje
-port-forward serwera Grafana MCP.
+Port 8100 on purpose, not the default 8000: in the demo environment port 8000 is
+taken by the port-forward of the Grafana MCP server.
 
-Health check (weryfikuje Qdranta i provider embeddingów, zwraca model i wymiar):
-<http://localhost:8100/api/health>. Dokumentacja API: <http://localhost:8100/docs>.
+Health check (verifies Qdrant and the embedding provider, returns the model and the
+dimension): <http://localhost:8100/api/health>. API docs: <http://localhost:8100/docs>.
 
-Konfiguracja przez zmienne `IDAR_*` — patrz [`.env.example`](.env.example)
-(skopiuj do `.env`, żeby nadpisać wartości domyślne; produkcyjnie
-`IDAR_EMBEDDING_MODEL=qwen3-embedding:8b`). Najważniejsze poza modelem:
+Configuration through `IDAR_*` variables, see [`.env.example`](.env.example) (copy
+it to `.env` to override the defaults; in production
+`IDAR_EMBEDDING_MODEL=qwen3-embedding:8b`). The most important ones besides the model:
 
-| Zmienna | Domyślnie | Znaczenie |
+| Variable | Default | Meaning |
 | --- | --- | --- |
-| `IDAR_CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | originy panelu (Vite dev, kontener Nginx); pusta = dowolny |
-| `IDAR_API_TOKEN` | pusty | jeśli ustawiony, `/api/documents*` i `/api/search` wymagają `Authorization: Bearer <token>` |
-| `IDAR_STARTUP_RETRIES` / `IDAR_STARTUP_RETRY_SECONDS` | `30` / `2` | ile czekać na Ollamę i Qdranta przy starcie (kontenery wstają równolegle) |
+| `IDAR_CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | panel origins (Vite dev, Nginx container); empty = any |
+| `IDAR_API_TOKEN` | empty | when set, `/api/documents*` and `/api/search` require `Authorization: Bearer <token>` |
+| `IDAR_STARTUP_RETRIES` / `IDAR_STARTUP_RETRY_SECONDS` | `30` / `2` | how long to wait for Ollama and Qdrant at startup (containers start in parallel) |
 
-## Kontrakt wyszukiwania (dla agentów)
+## Search contract (for agents)
 
-`POST /api/search` to interfejs zespołowy — agenci diagnostyczni używają go jako
-narzędzia retrieval. Pełna specyfikacja w Swaggerze (`/docs`); szybki test:
+`POST /api/search` is a team interface: the diagnostic agents use it as their
+retrieval tool. The full specification is in Swagger (`/docs`); a quick test:
 
 ```bash
-curl -X POST http://localhost:8100/api/search -H "Content-Type: application/json" -d "{\"query\": \"pod restartuje sie w petli, co sprawdzic?\", \"top_k\": 5}"
+curl -X POST http://localhost:8100/api/search -H "Content-Type: application/json" -d "{\"query\": \"the pod keeps restarting, what should I check?\", \"top_k\": 5}"
 ```
 
-Odpowiedź: `results[]` (text z breadcrumbem sekcji, score, doc_id, title,
-section_path, author, doc_date, chunk_index) + `embedding_model` i `collection`,
-na których policzono wynik. Opcjonalne `filters` (author, date_from, date_to)
-i `score_threshold`. Zmiany kontraktu tylko po uzgodnieniu z zespołem.
+Response: `results[]` (text with the section breadcrumb, score, doc_id, title,
+section_path, author, doc_date, chunk_index) plus the `embedding_model` and
+`collection` the result was computed on. Optional `filters` (author, date_from,
+date_to) and `score_threshold`. Change the contract only after agreeing on it with
+the team.
 
 ## Docker
 
-Obraz trzyma się konwencji pozostałych obrazów IDAR (`docs/CONTAINERS.md`):
-`python:3.12-slim-bookworm`, multi-stage, użytkownik `10003:10003` (agent ma
-10001, konwerter 10002), port `8080` w kontenerze, `HEALTHCHECK` na `/healthz`.
-Zależności instaluje `uv sync --frozen` z `uv.lock`, więc obraz jest powtarzalny.
-Model embeddingów **nie jest** w obrazie — żyje w Ollamie, a wektory w Qdrancie;
-sam kontener API jest bezstanowy.
+The image follows the conventions of the other IDAR images (`docs/CONTAINERS.md`):
+`python:3.12-slim-bookworm`, multi-stage, user `10003:10003` (the agent has 10001,
+the converter 10002), port `8080` in the container, `HEALTHCHECK` on `/healthz`.
+`uv sync --frozen` installs the dependencies from `uv.lock`, so the image is
+reproducible. The embedding model is **not** in the image: it lives in Ollama and the
+vectors in Qdrant; the API container itself is stateless.
 
-Sondy: `/healthz` to płytki liveness (proces żyje), `/api/health` to readiness
-(Qdrant + próbne embeddowanie; `503`, gdy coś leży). Gdyby liveness sprawdzał
-Ollamę, każda jej zadyszka restartowałaby API.
+Probes: `/healthz` is a shallow liveness check (the process is up), `/api/health` is
+readiness (Qdrant + a test embedding; `503` when something is down). If liveness
+checked Ollama, every hiccup of Ollama would restart the API.
 
-### Compose — trzy tryby
+### Compose: three modes
 
 ```bash
-docker compose up -d qdrant            # development: API z uv, Ollama na hoście
-docker compose up -d --build           # Qdrant + API w Dockerze, Ollama na hoście
-docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build   # wszystko w Dockerze
+docker compose up -d qdrant            # development: API from uv, Ollama on the host
+docker compose up -d --build           # Qdrant + API in Docker, Ollama on the host
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build   # everything in Docker
 ```
 
-- **Ollama na hoście** (Windows/macOS z Docker Desktop): API łączy się przez
-  `host.docker.internal:11434`, a natywna Ollama ma GPU bez konfiguracji. Na
-  Linuksie Ollama musi nasłuchiwać poza `127.0.0.1` (`OLLAMA_HOST=0.0.0.0`).
-- **Ollama w kontenerze** (`docker-compose.ollama.yml`): jednorazowy serwis
-  `ollama-pull` dociąga `IDAR_EMBEDDING_MODEL` (z `.env` lub domyślny `0.6b`),
-  API startuje dopiero po jego sukcesie. GPU NVIDIA: odkomentuj blok `deploy`
-  (Docker Desktop: WSL2 + sterownik NVIDIA). Bez GPU `0.6b` chodzi na CPU,
-  `8b` wyraźnie wolniej (ingest dużego dokumentu to minuty).
+- **Ollama on the host** (Windows/macOS with Docker Desktop): the API connects
+  through `host.docker.internal:11434`, and a native Ollama uses the GPU with no
+  setup. On Linux, Ollama must listen beyond `127.0.0.1` (`OLLAMA_HOST=0.0.0.0`).
+- **Ollama in a container** (`docker-compose.ollama.yml`): the one-off `ollama-pull`
+  service pulls `IDAR_EMBEDDING_MODEL` (from `.env`, or the default `0.6b`), and the
+  API starts only after it succeeds. NVIDIA GPU: uncomment the `deploy` block (Docker
+  Desktop: WSL2 + the NVIDIA driver). Without a GPU, `0.6b` runs well on the CPU and
+  `8b` is much slower (ingesting a large document takes minutes).
 
-API w kontenerze jest na <http://localhost:8100> (mapowanie `8100:8080`).
-Lokalny `.env` jest wczytywany opcjonalnie, ale adresy `IDAR_QDRANT_URL`
-i `IDAR_OLLAMA_URL` compose nadpisuje — `localhost` w kontenerze to sam kontener.
-Dane Qdranta są w wolumenie `qdrant_storage`, modele Ollamy w `ollama_models`;
-`docker compose down` je zostawia, `down -v` kasuje.
+The containerized API is at <http://localhost:8100> (port mapping `8100:8080`).
+A local `.env` is loaded when present, but compose overrides `IDAR_QDRANT_URL` and
+`IDAR_OLLAMA_URL`: `localhost` inside a container is the container itself.
+Qdrant data lives in the `qdrant_storage` volume and Ollama models in
+`ollama_models`; `docker compose down` keeps them, `down -v` deletes them.
 
-### Sam obraz (`docker run`, jak w CONTAINERS.md)
+### The image alone (`docker run`, as in CONTAINERS.md)
 
 ```bash
 docker build -t idar-rag-server:local ./server
@@ -101,38 +101,33 @@ docker run -d --name idar-rag-server --restart unless-stopped \
 curl --fail http://localhost:8100/healthz
 ```
 
-Obraz jest czysto pythonowy (bez kroków zależnych od architektury), więc
-`docker buildx build --platform linux/amd64,linux/arm64` działa tak samo jak
-dla pozostałych obrazów.
+The image is pure Python (no architecture-specific steps), so
+`docker buildx build --platform linux/amd64,linux/arm64` works the same as for the
+other images.
 
-### Kubernetes (uzupełnienie `docs/CLUSTER.md`)
+### Kubernetes
 
-| Workload | Kontroler | Repliki | Storage | Uwagi |
-| --- | --- | --- | --- | --- |
-| `rag-server` | Deployment | ≥ 1 (bezstanowy) | brak | liveness `/healthz`, readiness `/api/health`, startupProbe ok. 90 s (probe modelu) |
-| `qdrant` | StatefulSet (oficjalny chart `qdrant/qdrant`) | 1 | PVC | wersja przypięta jak w compose |
-| `ollama` | Deployment | 1 | PVC na modele (`8b` ≈ 5 GB) | węzeł z GPU albo duży CPU; `ollama pull` w init containerze lub Jobie |
+The manifests are in [`k8s/`](../k8s/): `rag-server.yaml`, `qdrant.yaml` and
+`ollama.yaml`, deployed as described in [`k8s/README.md`](../k8s/README.md).
+rag-server is a stateless Deployment (liveness `/healthz`, readiness `/api/health`),
+Qdrant a StatefulSet with a volume, and Ollama a Deployment that pulls the model onto
+its volume before it starts. The panel gets the API address as `VITE_RAG_API_URL` at
+build time: an address the browser can reach, not a cluster DNS name.
 
-Adresy w klastrze: `rag-server.idar.svc.cluster.local:8080`,
-`qdrant.idar.svc.cluster.local:6333`, `ollama.idar.svc.cluster.local:11434`.
-Startowe zasoby do zmierzenia: rag-server `100m/1 · 256Mi/1Gi`, Qdrant
-`250m/1 · 512Mi/2Gi`, Ollama z `8b` `2/4 · 8Gi/12Gi`. Konfiguracja przez
-ConfigMap (`IDAR_*`), token w Secret; panel dostaje adres API jako
-`VITE_RAG_API_URL` w czasie builda (adres osiągalny z przeglądarki, nie DNS klastra).
+## Known issues (Windows + Smart App Control)
 
-## Znane problemy (Windows + Smart App Control)
+On machines with Smart App Control enabled ("An Application Control policy has
+blocked this file"; on Polish Windows „Zasady kontroli aplikacji zablokowały ten
+plik"):
 
-Na maszynach z włączonym Smart App Control („Zasady kontroli aplikacji
-zablokowały ten plik"):
-
-- `grpcio` jest celowo przypięte w `pyproject.toml` do wersji z reputacją —
-  nie podbijać bez sprawdzenia, że `import grpc` przechodzi.
-- Skrypty konsolowe w `.venv\Scripts` (`pytest.exe`, `fastapi.exe`) to
-  trampoliny uv bez reputacji — gdy SAC je zablokuje (`Failed to spawn`,
-  os error 4551), uruchamiaj moduły przez interpreter: `uv run python -m pytest`,
-  `uv run python -m uvicorn app.main:app --reload --port 8100` (zamiast `fastapi dev`).
-- Jeśli blokowany jest sam `.venv\Scripts\python.exe` (uv tworzy go jako
-  unikalną trampolinę bez reputacji), odtwórz venv klasycznie:
+- `grpcio` is pinned in `pyproject.toml` on purpose, to a release that has a
+  reputation; do not bump it without checking that `import grpc` still works.
+- The console scripts in `.venv\Scripts` (`pytest.exe`, `fastapi.exe`) are uv
+  trampolines without a reputation. When SAC blocks them (`Failed to spawn`,
+  os error 4551), run the modules through the interpreter: `uv run python -m pytest`,
+  `uv run python -m uvicorn app.main:app --reload --port 8100` (instead of `fastapi dev`).
+- If `.venv\Scripts\python.exe` itself is blocked (uv creates it as a unique
+  trampoline without a reputation), recreate the venv the classic way:
 
   ```powershell
   Remove-Item -Recurse -Force .venv
@@ -140,19 +135,32 @@ zablokowały ten plik"):
   uv sync
   ```
 
-- Python z Microsoft Store nie nadaje się do developmentu (kontener MSIX
-  blokuje niepodpisane DLL-e) — dlatego `python-preference = "only-managed"`.
-  W obrazie Dockera to ustawienie nadpisuje `UV_PYTHON_PREFERENCE=system`.
+- If SAC blocks a DLL of the uv-managed Python itself (for example
+  `DLL load failed while importing unicodedata`), no venv trick helps. Run the tests
+  in a Linux container instead, from `server/` (append `-m slow` inside the quotes
+  for the semantic tests against the host's Ollama):
 
-## Testy i lint
+  ```powershell
+  docker run --rm -v "${PWD}:/src:ro" -w /src `
+    -e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_PYTHON_PREFERENCE=system `
+    -e IDAR_OLLAMA_URL=http://host.docker.internal:11434 `
+    python:3.12-slim-bookworm `
+    sh -c "pip install -q uv==0.12.5 && uv sync --frozen -q && uv run --frozen python -m pytest -p no:cacheprovider"
+  ```
+
+- Python from the Microsoft Store is not fit for development (its MSIX container
+  blocks unsigned DLLs), hence `python-preference = "only-managed"`. In the Docker
+  image `UV_PYTHON_PREFERENCE=system` overrides that setting.
+
+## Tests and lint
 
 ```bash
-uv run python -m pytest            # szybkie testy (FakeEmbedder, Qdrant :memory:)
-uv run python -m pytest -m slow    # testy semantyczne na prawdziwym modelu (wymagają Ollamy)
+uv run python -m pytest            # fast tests (FakeEmbedder, Qdrant :memory:)
+uv run python -m pytest -m slow    # semantic tests on the real model (need Ollama)
 uv run ruff check .
 uv run ruff format --check .
 ```
 
-`python -m pytest` zamiast `pytest`: skrypty `.venv\Scripts\*.exe` to trampoliny
-uv bez reputacji, które Smart App Control potrafi zablokować z dnia na dzień
-(patrz niżej); interpreter i `ruff.exe` są podpisane i przechodzą.
+`python -m pytest` instead of `pytest`: the `.venv\Scripts\*.exe` scripts are uv
+trampolines without a reputation, which Smart App Control can start blocking from
+one day to the next (see above); the interpreter and `ruff.exe` are signed and pass.

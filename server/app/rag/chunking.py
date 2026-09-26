@@ -3,15 +3,15 @@ from dataclasses import dataclass
 
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 
-# Heurystyka 3,5 znaku/token: polski jest mniej efektywny tokenowo niż angielski,
-# a precyzja nie ma znaczenia przy kontekście 32k tokenów modelu.
+# 3.5 characters per token: Polish is less token-efficient than English, and
+# precision does not matter with the model's 32k-token context.
 CHARS_PER_TOKEN = 3.5
 MIN_CHUNK_TOKENS = 50
 
 _HEADERS_TO_SPLIT_ON = [("#", "h1"), ("##", "h2"), ("###", "h3")]
 _FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
-# Dowolny poziom nagłówka, nie tylko H1: Docling zaczyna skonwertowany PDF
-# od "## Tytuł", a dokument bez H1 dostawał tytuł zastępczy "Dokument <hash>".
+# Any heading level, not just H1: Docling starts a converted PDF with "## Title",
+# and a document without an H1 used to get the fallback title "Document <hash>".
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _HEADING_ONLY_RE = re.compile(r"^#{1,6}\s+\S[^\n]*$")
 _SENTENCE_ENDS = (". ", "! ", "? ", "\n")
@@ -25,8 +25,8 @@ class Chunk:
 
 
 def extract_title(markdown: str) -> str | None:
-    """Pierwszy nagłówek dokumentu, niezależnie od poziomu — to, co czytający
-    widzi na górze strony."""
+    """The document's first heading, whatever its level: what a reader sees at
+    the top of the page."""
     in_fence = False
     for line in markdown.splitlines():
         if _FENCE_RE.match(line.strip()):
@@ -41,15 +41,15 @@ def extract_title(markdown: str) -> str | None:
 
 
 def _is_atomic(unit: str) -> bool:
-    # Bloków kodu i tabel nigdy nie tniemy — przecięty YAML czy tabela
-    # są bezwartościowe i przy wyszukiwaniu, i dla czytającego agenta.
+    # Code blocks and tables are never split: half a YAML block or half a table
+    # is worthless both for search and for the agent reading it.
     return bool(_FENCE_RE.match(unit)) or unit.lstrip().startswith("|")
 
 
 def _split_units(text: str) -> list[str]:
-    """Dzieli tekst sekcji na jednostki pakowania: bloki kodu w całości,
-    proza po pustych liniach. Pustych linii wewnątrz płotka nie wolno
-    traktować jak granic akapitów — stąd parser liniowy zamiast splitu."""
+    """Splits a section's text into packing units: code blocks whole, prose at
+    blank lines. Blank lines inside a fence must not be taken for paragraph
+    breaks, hence a line parser instead of a split."""
     units: list[str] = []
     prose_lines: list[str] = []
     fence_lines: list[str] = []
@@ -141,8 +141,8 @@ def build_chunks(
     chunks: list[Chunk] = []
     for section in sections:
         content = section.page_content.strip()
-        # Sam nagłówek bez treści nie tworzy chunka — jego tekst i tak niosą
-        # section_path chunków podsekcji.
+        # A heading with no body makes no chunk: the section_path of its
+        # subsections' chunks carries its text anyway.
         if not content or _HEADING_ONLY_RE.fullmatch(content):
             continue
         path = tuple(section.metadata[key] for key in ("h1", "h2", "h3") if key in section.metadata)

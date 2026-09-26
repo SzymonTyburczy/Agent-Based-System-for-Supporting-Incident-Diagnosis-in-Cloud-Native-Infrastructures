@@ -2,19 +2,20 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Spójnie z limitem uploadu we frontendzie (15 MB).
-MAX_TRESC_LENGTH = 15 * 1024 * 1024
+# Matches the upload limit in the frontend (15 MB).
+MAX_CONTENT_LENGTH = 15 * 1024 * 1024
 
 
 class DocumentIn(BaseModel):
-    """Kontrakt ingestu 1:1 z payloadem frontendu — pola celowo po polsku
-    (data / autor / tresc), uzgodnione zespołowo i zamrożone."""
+    """Ingest contract, 1:1 with the frontend payload. The JSON keys stay Polish
+    (data / autor / tresc) because the team agreed on them and froze them; the
+    aliases keep them on the wire while the code uses English names."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    data: date
-    autor: str = Field(min_length=1, max_length=200)
-    tresc: str = Field(min_length=1, max_length=MAX_TRESC_LENGTH)
+    doc_date: date = Field(alias="data")
+    author: str = Field(alias="autor", min_length=1, max_length=200)
+    content: str = Field(alias="tresc", min_length=1, max_length=MAX_CONTENT_LENGTH)
 
 
 class DocumentIngestResponse(BaseModel):
@@ -47,7 +48,7 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     top_k: int = Field(default=5, ge=1, le=20)
     filters: SearchFilters = Field(default_factory=SearchFilters)
-    # Sensowny próg wyznaczy dopiero harness ewaluacyjny — dlatego opcjonalny.
+    # Optional until the evaluation harness shows what a sensible threshold is.
     score_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
 
 
