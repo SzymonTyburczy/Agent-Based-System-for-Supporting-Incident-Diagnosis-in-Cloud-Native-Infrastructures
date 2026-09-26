@@ -1,4 +1,7 @@
 # Local Docker Desktop override. Apply AFTER grafana-mcp-values.yaml.
 # Keep Host validation enabled; allow the container-to-host MCP connection.
+# Helm replaces lists instead of merging them, so this repeats the in-cluster
+# names from grafana-mcp-values.yaml; without them an agent-core Pod in the
+# cluster gets 403.
 extraArgs:
-  - --allowed-hosts=localhost:8000,127.0.0.1:8000,[::1]:8000,localhost:18000,127.0.0.1:18000,host.docker.internal:18000
+  - --allowed-hosts=localhost:8000,127.0.0.1:8000,[::1]:8000,localhost:18000,127.0.0.1:18000,host.docker.internal:18000,grafana-mcp.observability.svc.cluster.local:8000,grafana-mcp.observability.svc:8000,grafana-mcp.observability:8000

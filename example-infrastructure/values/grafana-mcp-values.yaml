@@ -9,6 +9,14 @@ grafana:
 # Enforce read-only mode so AI assistants cannot mutate dashboards or alerts
 disableWrite: true
 
+# mcp-grafana checks the Host header and answers 403 to anything not listed.
+# agent-core deployed in the cluster (k8s/agent-core.yaml, namespace idar)
+# reaches the server by its Service DNS name, so those names must be allowed.
+# grafana-mcp-local-values.yaml replaces this list for Docker Desktop and has
+# to repeat these entries.
+extraArgs:
+  - --allowed-hosts=grafana-mcp.observability.svc.cluster.local:8000,grafana-mcp.observability.svc:8000,grafana-mcp.observability:8000
+
 # Basic auth credentials for local development cluster
 env:
   GRAFANA_USERNAME: "admin"
