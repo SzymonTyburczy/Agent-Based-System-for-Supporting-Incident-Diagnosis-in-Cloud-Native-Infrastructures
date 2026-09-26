@@ -1,0 +1,176 @@
+# Qdrant — vector store behind the RAG knowledge base (server/).
+#
+# One replica with a ReadWriteOnce volume: collections, the kb_active alias and
+# snapshots all live on it. Same version as server/docker-compose.yml; the
+# -unprivileged image runs as UID 1000 instead of root.
+#
+# Only rag-server talks to Qdrant, and Qdrant has no authentication of its own,
+# so the NetworkPolicy at the bottom admits nothing else. Enforcement depends on
+# the cluster's network plugin (docs/CLUSTER.md, "Security and configuration").
+#
+# Apply after 00-namespace.yaml:  kubectl apply -f k8s/qdrant.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/component: vector-store
+    app.kubernetes.io/part-of: idar
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: qdrant
+  ports:
+    - name: http
+      port: 6333
+      targetPort: http
+    - name: grpc
+      port: 6334
+      targetPort: grpc
+---
+# Governing Service required by the StatefulSet (stable per-Pod DNS). Clients
+# use the ClusterIP Service above.
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant-headless
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/component: vector-store
+    app.kubernetes.io/part-of: idar
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: qdrant
+  ports:
+    - name: http
+      port: 6333
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/component: vector-store
+    app.kubernetes.io/part-of: idar
+spec:
+  serviceName: qdrant-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: qdrant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: qdrant
+        app.kubernetes.io/component: vector-store
+        app.kubernetes.io/part-of: idar
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: qdrant
+          image: qdrant/qdrant:v1.19.0-unprivileged
+          imagePullPolicy: IfNotPresent
+          env:
+            # Everything Qdrant writes goes to the volume, so the image itself
+            # can stay read-only.
+            - name: QDRANT__STORAGE__STORAGE_PATH
+              value: /qdrant/storage
+            - name: QDRANT__STORAGE__SNAPSHOTS_PATH
+              value: /qdrant/storage/snapshots
+            - name: QDRANT_INIT_FILE_PATH
+              value: /qdrant/storage/.qdrant-initialized
+            # A private knowledge base should not phone home.
+            - name: QDRANT__TELEMETRY_DISABLED
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 6333
+            - name: grpc
+              containerPort: 6334
+          startupProbe:
+            # Loading large collections from disk takes a while after a restart.
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: storage
+              mountPath: /qdrant/storage
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        labels:
+          app.kubernetes.io/name: qdrant
+          app.kubernetes.io/part-of: idar
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # Default StorageClass. On EC2 this is an EBS volume: install the EBS CSI
+        # driver first, otherwise the claim stays Pending.
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qdrant
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: qdrant
+    app.kubernetes.io/part-of: idar
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: qdrant
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rag-server
+      ports:
+        - port: 6333
+        - port: 6334
