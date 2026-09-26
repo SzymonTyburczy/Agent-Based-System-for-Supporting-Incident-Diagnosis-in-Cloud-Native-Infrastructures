@@ -14,6 +14,10 @@ Write-Host "==================================================================="
 Write-Host " DEPLOYING OBSERVABILITY STACK AND OTEL-DEMO" -ForegroundColor Cyan
 Write-Host "===================================================================" -ForegroundColor Cyan
 
+# 0. Deploy Local Path Provisioner (for local PV provisioning)
+Write-Host "`n[0/5] Deploying Local Path Provisioner for local storage..." -ForegroundColor Yellow
+kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml
+
 # 1. Create Kubernetes namespaces
 Write-Host "`n[1/5] Creating namespaces (observability, otel-demo)..." -ForegroundColor Yellow
 kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
@@ -53,7 +57,11 @@ helm upgrade --install otel-demo open-telemetry/opentelemetry-demo -n otel-demo 
 Write-Host "`n[4.5/5] Deploying Custom Prometheus Alerts..." -ForegroundColor Yellow
 kubectl apply -f "$ExampleInfraDir\alerts"
 
-# 5. Start persistent background port forwarding
+# 5. Deploy IDAR System
+Write-Host "`n[5/6] Deploying IDAR System..." -ForegroundColor Yellow
+kubectl apply -f "$ExampleInfraDir\..\k8s"
+
+# 6. Start persistent background port forwarding
 Write-Host "`n[5/5] Starting persistent port forwarding windows..." -ForegroundColor Yellow
 
 & "$ScriptDir\start-port-forwards.ps1"

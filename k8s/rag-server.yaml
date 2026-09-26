@@ -86,8 +86,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: rag-server
-          image: idar-rag-server:local
-          imagePullPolicy: IfNotPresent
+          image: wpawlina2137/idar-rag-server:v0.1.0
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: rag-server-config
