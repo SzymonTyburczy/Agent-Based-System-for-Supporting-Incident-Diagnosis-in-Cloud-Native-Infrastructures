@@ -1,0 +1,138 @@
+# rag-server — the RAG knowledge base API (server/): document ingest for the
+# panel, semantic search for the agents.
+#
+# Stateless: vectors live in Qdrant (k8s/qdrant.yaml), the embedding model in
+# Ollama (k8s/ollama.yaml), so this Deployment can run several replicas.
+#
+# Probes (docs/CLUSTER.md): liveness on /healthz only checks the process;
+# readiness on /api/health also checks Qdrant and runs an embedding, so a Pod
+# whose dependencies are down leaves the Service instead of being restarted.
+#
+# Image: build and load it as described in k8s/README.md
+# (docker build -t idar-rag-server:local ./server).
+#
+# Optional Secret: when it exists, /api/documents and /api/search require
+# "Authorization: Bearer <token>":
+#   kubectl create secret generic rag-server-secrets -n idar --from-literal=IDAR_API_TOKEN=...
+#
+# Apply after qdrant.yaml and ollama.yaml:  kubectl apply -f k8s/rag-server.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-server-config
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: rag-server
+    app.kubernetes.io/part-of: idar
+data:
+  IDAR_QDRANT_URL: http://qdrant:6333
+  IDAR_OLLAMA_URL: http://ollama:11434
+  # Must be one of Ollama's OLLAMA_PULL_MODELS (k8s/ollama.yaml). A different
+  # model gets its own collection, so documents have to be ingested again.
+  IDAR_EMBEDDING_MODEL: qwen3-embedding:0.6b
+  # The panel's exact origin as the browser sees it. localhost:3000 is the
+  # local panel port from docs/CONTAINERS.md; set the real HTTPS origin on EC2.
+  IDAR_CORS_ORIGINS: http://localhost:3000
+  # 60 x 5 s: on a first deploy Ollama is still pulling the model when this
+  # Pod starts. The startupProbe below has to outlast this window, because
+  # Uvicorn only opens the port once startup has finished.
+  IDAR_STARTUP_RETRIES: "60"
+  IDAR_STARTUP_RETRY_SECONDS: "5"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-server
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: rag-server
+    app.kubernetes.io/component: knowledge-base
+    app.kubernetes.io/part-of: idar
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: rag-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-server
+  namespace: idar
+  labels:
+    app.kubernetes.io/name: rag-server
+    app.kubernetes.io/component: knowledge-base
+    app.kubernetes.io/part-of: idar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rag-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rag-server
+        app.kubernetes.io/component: knowledge-base
+        app.kubernetes.io/part-of: idar
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10003
+        runAsGroup: 10003
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: rag-server
+          image: idar-rag-server:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: rag-server-config
+            - secretRef:
+                name: rag-server-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            # 36 x 10 s > IDAR_STARTUP_RETRIES x IDAR_STARTUP_RETRY_SECONDS.
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            # Runs a real embedding, so allow more than the default second.
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
