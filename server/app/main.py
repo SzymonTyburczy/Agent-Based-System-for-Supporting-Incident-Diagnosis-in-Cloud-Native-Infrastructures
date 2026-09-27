@@ -19,8 +19,8 @@ log = logging.getLogger("idar.startup")
 
 
 def with_retries[T](label: str, build: Callable[[], T], *, attempts: int, delay: float) -> T:
-    """Czeka na zależność, która wstaje równolegle z nami (kontenery, K8s).
-    Ostatni błąd leci dalej — start bez Ollamy/Qdranta ma się nie udać głośno."""
+    """Waits for a dependency that starts in parallel with us (containers, K8s).
+    The last error propagates: starting without Ollama or Qdrant must fail loudly."""
     attempts = max(attempts, 1)
     for attempt in range(1, attempts + 1):
         try:
@@ -45,8 +45,8 @@ def create_app(
     embedder: EmbeddingProvider | None = None,
     qdrant: QdrantClient | None = None,
 ) -> FastAPI:
-    """Fabryka aplikacji — testy wstrzykują tu fake'i (FakeEmbedder,
-    QdrantClient(":memory:")) zamiast realnych zasobów budowanych w lifespanie."""
+    """Application factory. Tests inject fakes here (FakeEmbedder,
+    QdrantClient(":memory:")) instead of the real resources built in the lifespan."""
     settings = settings or Settings()
     retry = {"attempts": settings.startup_retries, "delay": settings.startup_retry_seconds}
 

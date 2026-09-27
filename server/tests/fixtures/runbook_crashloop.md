@@ -1,46 +1,46 @@
 # Runbook: CrashLoopBackOff
 
-Pod aplikacji restartuje się w pętli. Ten runbook prowadzi przez diagnozę
-i najczęstsze przyczyny.
+The application pod restarts in a loop. This runbook walks through the diagnosis
+and the most common causes.
 
-## Diagnoza
+## Diagnosis
 
-Sprawdź stan podów w namespace demo:
+Check the state of the pods in the demo namespace:
 
 ```bash
 kubectl get pods -n otel-demo
-kubectl describe pod <nazwa-poda> -n otel-demo
+kubectl describe pod <pod-name> -n otel-demo
 ```
 
-Typowe przyczyny to błędna konfiguracja, brak zasobów albo nieudany probe
-startowy.
+Typical causes are a wrong configuration, missing resources or a failing startup
+probe.
 
-### Logi kontenera
+### Container logs
 
-Pobierz logi poprzedniej instancji kontenera i porównaj limity pamięci
-z faktycznym zużyciem:
+Fetch the logs of the previous container instance and compare the memory limits
+with the actual usage:
 
 ```yaml
-# przykładowa konfiguracja limitów — znak # w YAML-u to nie nagłówek Markdown
+# sample limits configuration — a # in YAML is not a Markdown heading
 resources:
   limits:
     memory: "512Mi"
 
   requests:
     memory: "256Mi"
-# koniec przykładu
+# end of sample
 ```
 
-Kod wyjścia 137 oznacza OOMKilled.
+Exit code 137 means OOMKilled.
 
-## Kody wyjścia
+## Exit codes
 
-| Kod | Znaczenie                 |
-| --- | ------------------------- |
-| 137 | OOMKilled (limit pamięci) |
-| 1   | błąd aplikacji            |
+| Code | Meaning                  |
+| ---- | ------------------------ |
+| 137  | OOMKilled (memory limit) |
+| 1    | application error        |
 
-## Znane obejścia
+## Known workarounds
 
-Zwiększ limity pamięci albo napraw konfigurację startową. Po zmianie
-obserwuj restarty przez co najmniej pięć minut.
+Raise the memory limits or fix the startup configuration. After the change,
+watch the restarts for at least five minutes.

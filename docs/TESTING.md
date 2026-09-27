@@ -278,8 +278,9 @@ Check headings and tables as well as the HTTP status.
 Start the RAG API as described in [RUNNING.md](RUNNING.md#4-start-the-rag-knowledge-base)
 or [CONTAINERS.md](CONTAINERS.md#rag-knowledge-base-server). The payload is the same
 `{data, autor, tresc}` shape the panel sends from the Documentation view, so this is
-the API-level version of step 7's **Send**. The sample text avoids Polish
-diacritics on purpose: Windows PowerShell 5.1 does not send string bodies as UTF-8.
+the API-level version of step 7's **Send**. Windows PowerShell 5.1 does not send
+string bodies as UTF-8, so keep non-ASCII text (such as Polish diacritics) out of
+these commands there, or use PowerShell 7.
 
 **PowerShell**
 
@@ -288,11 +289,11 @@ Invoke-RestMethod http://localhost:8100/api/health
 $doc = @{
     data  = (Get-Date -Format yyyy-MM-dd)
     autor = 'Manual test'
-    tresc = "# Runbook: CrashLoopBackOff`n`n## Diagnoza`n`nPod restartuje sie w petli. Sprawdz logi poprzedniego kontenera: kubectl logs <pod> --previous."
+    tresc = "# Runbook: CrashLoopBackOff`n`n## Diagnosis`n`nThe pod restarts in a loop. Check the logs of the previous container: kubectl logs <pod> --previous."
 } | ConvertTo-Json
 $ingested = Invoke-RestMethod -Method Post -Uri http://localhost:8100/api/documents -ContentType 'application/json' -Body $doc
 $ingested
-$query = @{ query = 'pod ciagle sie restartuje, jak znalezc przyczyne?'; top_k = 3 } | ConvertTo-Json
+$query = @{ query = 'the pod keeps restarting, how do I find the cause?'; top_k = 3 } | ConvertTo-Json
 (Invoke-RestMethod -Method Post -Uri http://localhost:8100/api/search -ContentType 'application/json' -Body $query).results | Select-Object score, title, section_path
 Invoke-RestMethod -Method Delete -Uri "http://localhost:8100/api/documents/$($ingested.doc_id)"
 ```
@@ -302,11 +303,11 @@ Invoke-RestMethod -Method Delete -Uri "http://localhost:8100/api/documents/$($in
 ```bash
 curl --fail --silent --show-error http://localhost:8100/api/health | jq .
 doc=$(jq -n --arg data "$(date -u +%Y-%m-%d)" \
-  '{data: $data, autor: "Manual test", tresc: "# Runbook: CrashLoopBackOff\n\n## Diagnoza\n\nPod restartuje sie w petli. Sprawdz logi poprzedniego kontenera: kubectl logs <pod> --previous."}')
+  '{data: $data, autor: "Manual test", tresc: "# Runbook: CrashLoopBackOff\n\n## Diagnosis\n\nThe pod restarts in a loop. Check the logs of the previous container: kubectl logs <pod> --previous."}')
 ingested=$(curl --fail --silent --show-error -H 'Content-Type: application/json' --data-binary "$doc" http://localhost:8100/api/documents)
 echo "$ingested" | jq .
 curl --fail --silent --show-error -H 'Content-Type: application/json' \
-  --data '{"query": "pod ciagle sie restartuje, jak znalezc przyczyne?", "top_k": 3}' \
+  --data '{"query": "the pod keeps restarting, how do I find the cause?", "top_k": 3}' \
   http://localhost:8100/api/search | jq '.results[] | {score, title, section_path}'
 curl --fail --silent --show-error -X DELETE "http://localhost:8100/api/documents/$(echo "$ingested" | jq -r .doc_id)"
 ```
@@ -317,8 +318,8 @@ with a `doc_id`, `title: "Runbook: CrashLoopBackOff"` and `chunk_count: 1` (the
 heading-only H1 produces no chunk of its own). Repeating the same POST returns `200`
 with `already_exists: true`: document ids are derived from the content, so re-sending
 never duplicates anything. The search lists the runbook first with `section_path`
-`["Runbook: CrashLoopBackOff", "Diagnoza"]`; the score is a cosine similarity
-(roughly 0.6–0.7 for this paraphrase on `0.6b`) and its absolute value differs
+`["Runbook: CrashLoopBackOff", "Diagnosis"]`; the score is a cosine similarity
+(about 0.73 for this paraphrase on `0.6b`) and its absolute value differs
 between models, so compare rankings, not raw scores. DELETE returns `204` and
 `GET /api/documents` no longer lists the document. With `IDAR_API_TOKEN` set, pass
 the Authorization header on the `/api/documents` and `/api/search` calls;

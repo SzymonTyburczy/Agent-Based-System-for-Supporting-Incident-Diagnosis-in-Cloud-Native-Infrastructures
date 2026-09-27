@@ -21,23 +21,23 @@ def test_no_chunk_cuts_inside_code_fence():
 
     assert chunks
     for chunk in chunks:
-        assert fences_balanced(chunk.text), f"przecięty płotek w chunku: {chunk.text!r}"
+        assert fences_balanced(chunk.text), f"fence cut inside a chunk: {chunk.text!r}"
 
 
 def test_oversized_fence_stays_whole():
     fence = (
         "```yaml\n"
-        + "\n".join(f"klucz_{i}: wartosc_{i}" for i in range(60))
-        + "\n\n# komentarz w YAML-u, nie nagłówek\n```"
+        + "\n".join(f"key_{i}: value_{i}" for i in range(60))
+        + "\n\n# a YAML comment, not a heading\n```"
     )
-    markdown = f"# Tytuł\n\nWstęp przed blokiem.\n\n{fence}\n\nZakończenie po bloku."
+    markdown = f"# Title\n\nIntro before the block.\n\n{fence}\n\nClosing words after the block."
 
     chunks = build_chunks(markdown, max_tokens=60, overlap_tokens=0, breadcrumbs=False)
 
     fence_chunks = [c for c in chunks if "```yaml" in c.text]
     assert len(fence_chunks) == 1
     assert fences_balanced(fence_chunks[0].text)
-    assert "# komentarz w YAML-u, nie nagłówek" in fence_chunks[0].text
+    assert "# a YAML comment, not a heading" in fence_chunks[0].text
 
 
 def test_section_paths_follow_header_tree():
@@ -45,9 +45,9 @@ def test_section_paths_follow_header_tree():
 
     paths = {c.section_path for c in chunks}
     assert ("Runbook: CrashLoopBackOff",) in paths
-    assert ("Runbook: CrashLoopBackOff", "Diagnoza") in paths
-    assert ("Runbook: CrashLoopBackOff", "Diagnoza", "Logi kontenera") in paths
-    assert ("Runbook: CrashLoopBackOff", "Kody wyjścia") in paths
+    assert ("Runbook: CrashLoopBackOff", "Diagnosis") in paths
+    assert ("Runbook: CrashLoopBackOff", "Diagnosis", "Container logs") in paths
+    assert ("Runbook: CrashLoopBackOff", "Exit codes") in paths
 
 
 def test_breadcrumb_prefixes_chunk_text():
@@ -56,10 +56,10 @@ def test_breadcrumb_prefixes_chunk_text():
     logs = [
         c
         for c in chunks
-        if c.section_path == ("Runbook: CrashLoopBackOff", "Diagnoza", "Logi kontenera")
+        if c.section_path == ("Runbook: CrashLoopBackOff", "Diagnosis", "Container logs")
     ]
     assert logs
-    assert logs[0].text.startswith("Runbook: CrashLoopBackOff > Diagnoza > Logi kontenera\n\n")
+    assert logs[0].text.startswith("Runbook: CrashLoopBackOff > Diagnosis > Container logs\n\n")
 
 
 def test_breadcrumbs_can_be_disabled():
@@ -75,14 +75,14 @@ def test_every_source_line_survives():
     for line in FIXTURE.splitlines():
         stripped = line.strip()
         if stripped:
-            assert stripped in combined, f"zgubiona linia: {stripped!r}"
+            assert stripped in combined, f"lost line: {stripped!r}"
 
 
 def test_long_section_respects_max_size():
     paragraphs = [
-        f"Akapit numer {i}. " + "Diagnostyka wymaga cierpliwości i logów. " * 4 for i in range(15)
+        f"Paragraph number {i}. " + "Diagnostics takes patience and logs. " * 4 for i in range(15)
     ]
-    markdown = "# Długi dokument\n\n## Sekcja\n\n" + "\n\n".join(paragraphs)
+    markdown = "# Long document\n\n## Section\n\n" + "\n\n".join(paragraphs)
     max_tokens = 120
 
     chunks = build_chunks(markdown, max_tokens=max_tokens, overlap_tokens=0, breadcrumbs=False)
@@ -95,10 +95,10 @@ def test_long_section_respects_max_size():
 
 def test_giant_paragraph_is_sentence_split_with_overlap():
     sentences = [
-        f"Zdanie numer {i} opisuje kolejny krok diagnostyki incydentu w klastrze."
+        f"Sentence number {i} describes the next step in diagnosing a cluster incident."
         for i in range(30)
     ]
-    markdown = "# Dokument\n\n" + " ".join(sentences)
+    markdown = "# Document\n\n" + " ".join(sentences)
 
     with_overlap = build_chunks(markdown, max_tokens=120, overlap_tokens=30, breadcrumbs=False)
     without_overlap = build_chunks(markdown, max_tokens=120, overlap_tokens=0, breadcrumbs=False)
@@ -114,22 +114,22 @@ def test_giant_paragraph_is_sentence_split_with_overlap():
 
 
 def test_tiny_tail_is_merged_into_previous_chunk():
-    markdown = "# Dokument\n\n## Sekcja\n\n" + "A" * 415 + "\n\nKrótki ogon."
+    markdown = "# Document\n\n## Section\n\n" + "A" * 415 + "\n\nShort tail."
 
     chunks = build_chunks(markdown, max_tokens=120, overlap_tokens=0, breadcrumbs=False)
 
     assert len(chunks) == 1
-    assert "Krótki ogon." in chunks[0].text
+    assert "Short tail." in chunks[0].text
 
 
 def test_header_only_section_produces_no_chunk():
-    markdown = "# Tytuł\n\n## Pusta\n\n### Podsekcja\n\nTreść podsekcji."
+    markdown = "# Title\n\n## Empty\n\n### Subsection\n\nSubsection body."
 
     chunks = build_chunks(markdown, max_tokens=600, overlap_tokens=0, breadcrumbs=False)
 
     paths = [c.section_path for c in chunks]
-    assert ("Tytuł", "Pusta") not in paths
-    assert ("Tytuł", "Pusta", "Podsekcja") in paths
+    assert ("Title", "Empty") not in paths
+    assert ("Title", "Empty", "Subsection") in paths
 
 
 def test_empty_markdown_returns_no_chunks():
@@ -148,34 +148,34 @@ def test_extract_title_reads_first_h1():
 
 
 def test_extract_title_accepts_any_heading_level():
-    # Docling zaczyna skonwertowany PDF od "## Tytuł" — dokument bez H1 dostawał
-    # przez to tytuł zastępczy "Dokument <hash>" na liście i w wynikach wyszukiwania.
-    assert extract_title("## Runbook: Kafka consumer lag\n\nObjawy...") == (
+    # Docling starts a converted PDF with "## Title", so a document without an H1 used
+    # to get the fallback title "Document <hash>" in the list and in search results.
+    assert extract_title("## Runbook: Kafka consumer lag\n\nSymptoms...") == (
         "Runbook: Kafka consumer lag"
     )
-    assert extract_title("### Detale\n\nTreść.") == "Detale"
+    assert extract_title("### Details\n\nBody.") == "Details"
 
 
 def test_extract_title_takes_the_first_heading_it_meets():
-    markdown = "## Sekcja wstępna\n\nTreść.\n\n# Późniejszy H1\n\nWięcej."
-    assert extract_title(markdown) == "Sekcja wstępna"
+    markdown = "## Introduction\n\nBody.\n\n# A later H1\n\nMore."
+    assert extract_title(markdown) == "Introduction"
 
 
 def test_extract_title_ignores_hash_without_space():
-    # "#tag" to nie nagłówek w CommonMark.
-    assert extract_title("#tag bez spacji\n\nTreść.") is None
+    # "#tag" is not a heading in CommonMark.
+    assert extract_title("#tag without a space\n\nBody.") is None
 
 
 def test_extract_title_ignores_any_heading_inside_fence():
-    markdown = "```yaml\n## nie tytuł\n```\n\n## Prawdziwy tytuł\n\nTreść."
-    assert extract_title(markdown) == "Prawdziwy tytuł"
+    markdown = "```yaml\n## not a title\n```\n\n## The real title\n\nBody."
+    assert extract_title(markdown) == "The real title"
 
 
 def test_extract_title_ignores_h1_inside_fence():
-    markdown = "```\n# to nie tytuł\n```\n\n# Prawdziwy tytuł\n\nTreść."
-    assert extract_title(markdown) == "Prawdziwy tytuł"
+    markdown = "```\n# not a title\n```\n\n# The real title\n\nBody."
+    assert extract_title(markdown) == "The real title"
 
 
 def test_extract_title_missing():
-    assert extract_title("dokument bez nagłówka") is None
+    assert extract_title("a document without a heading") is None
     assert extract_title("") is None

@@ -10,8 +10,8 @@ from app.rag.embeddings import l2_normalize
 
 
 class FakeEmbedder:
-    """Deterministyczny bag-of-words (CRC32 tokenów) — testuje hydraulikę
-    pipeline'u, nigdy semantykę; semantykę mierzy wyłącznie harness ewaluacyjny."""
+    """Deterministic bag-of-words (CRC32 of the tokens). It tests the pipeline's
+    plumbing, never semantics; only the evaluation harness measures semantics."""
 
     model_id = "fake"
     dimension = 64
@@ -36,8 +36,8 @@ def fake_embedder() -> FakeEmbedder:
 
 @pytest.fixture
 def client(fake_embedder: FakeEmbedder):
-    # _env_file=None: lokalny .env dewelopera (np. IDAR_API_TOKEN) nie ma
-    # wpływu na testy.
+    # _env_file=None: a developer's local .env (e.g. IDAR_API_TOKEN) does not
+    # affect the tests.
     app = create_app(
         settings=Settings(_env_file=None),
         embedder=fake_embedder,

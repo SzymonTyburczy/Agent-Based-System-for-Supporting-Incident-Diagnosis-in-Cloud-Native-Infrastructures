@@ -24,14 +24,14 @@ def l2_normalize(vector: list[float]) -> list[float]:
 
 
 class LangChainProvider:
-    """Adapter na dowolną integrację LangChain Embeddings, dokładający reguły
-    wspólne dla wszystkich silników:
+    """Adapter over any LangChain Embeddings integration that adds the rules
+    shared by every engine:
 
-    - prefiks instrukcji wyłącznie dla zapytań, nigdy dla dokumentów
-      (asymetria wymagana przez Qwen3-Embedding),
-    - normalizację L2 (nie zakładamy, że silnik normalizuje sam),
-    - sondę wymiaru przy konstrukcji (świadomie: awaria połączenia z silnikiem
-      ujawnia się przy starcie aplikacji, nie przy pierwszym żądaniu).
+    - the instruction prefix for queries only, never for documents
+      (the asymmetry Qwen3-Embedding requires),
+    - L2 normalization (we do not assume the engine normalizes on its own),
+    - a dimension probe at construction (on purpose: a broken connection to the
+      engine shows up at application startup, not on the first request).
     """
 
     def __init__(self, inner: Embeddings, model_id: str, query_instruction: str) -> None:

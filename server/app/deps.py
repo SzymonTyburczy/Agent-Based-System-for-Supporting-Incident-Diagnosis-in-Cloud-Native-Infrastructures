@@ -15,8 +15,8 @@ def get_settings(request: Request) -> Settings:
 def require_api_token(
     request: Request, authorization: Annotated[str | None, Header()] = None
 ) -> None:
-    """Strażnik /api/documents i /api/search: aktywny tylko, gdy ustawiono
-    IDAR_API_TOKEN (jak CLIENT_API_TOKEN agenta i API_TOKEN konwertera)."""
+    """Guards /api/documents and /api/search, only when IDAR_API_TOKEN is set
+    (like the agent's CLIENT_API_TOKEN and the converter's API_TOKEN)."""
     token = request.app.state.settings.api_token
     if not token or authorization == f"Bearer {token}":
         return

@@ -1,6 +1,6 @@
-# Development:  docker compose up -d qdrant        (API z `uv run fastapi dev`, Ollama na hoście)
-# Kontener:     docker compose up -d --build        (Qdrant + API w Dockerze, Ollama na hoście)
-# Wszystko:     docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build
+# Development:  docker compose up -d qdrant        (API from `uv run fastapi dev`, Ollama on the host)
+# Container:    docker compose up -d --build        (Qdrant + API in Docker, Ollama on the host)
+# Everything:   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build
 services:
   qdrant:
     image: qdrant/qdrant:v1.19.0
@@ -10,7 +10,7 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     healthcheck:
-      # Obraz Qdranta nie ma curl/wget — wystarczy otwarcie portu TCP z basha.
+      # The Qdrant image has no curl or wget; opening the TCP port from bash is enough.
       test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 5s
       timeout: 3s
@@ -23,17 +23,17 @@ services:
     ports:
       - "8100:8080"
     env_file:
-      # Lokalny .env (model, chunking, token...) jest opcjonalny; adresy usług
-      # poniżej i tak go nadpisują, bo `localhost` w kontenerze to sam kontener.
+      # A local .env (model, chunking, token...) is optional; the service addresses
+      # below override it anyway, because `localhost` in a container is the container.
       - path: .env
         required: false
     environment:
       IDAR_QDRANT_URL: http://qdrant:6333
-      # Ollama na hoście (Docker Desktop: host.docker.internal działa od ręki,
-      # GPU bez konfiguracji). Ollama w kontenerze: docker-compose.ollama.yml.
+      # Ollama on the host (Docker Desktop: host.docker.internal works out of the
+      # box, GPU with no setup). Ollama in a container: docker-compose.ollama.yml.
       IDAR_OLLAMA_URL: http://host.docker.internal:11434
     extra_hosts:
-      # Linux nie ma host.docker.internal; host-gateway dopisuje go do /etc/hosts.
+      # Linux has no host.docker.internal; host-gateway adds it to /etc/hosts.
       - "host.docker.internal:host-gateway"
     depends_on:
       qdrant:

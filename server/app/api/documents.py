@@ -27,9 +27,9 @@ def create_document(
 ) -> DocumentIngestResponse:
     try:
         result = ingest_document(
-            data=payload.data.isoformat(),
-            autor=payload.autor,
-            tresc=payload.tresc,
+            doc_date=payload.doc_date.isoformat(),
+            author=payload.author,
+            content=payload.content,
             store=store,
             embedder=embedder,
             settings=settings,
@@ -38,7 +38,7 @@ def create_document(
         raise HTTPException(status_code=422, detail=str(err)) from err
 
     if result.already_exists:
-        # Duplikat to nie błąd — idempotencja zamiast 409.
+        # A duplicate is not an error: idempotent 200 instead of 409.
         response.status_code = 200
     return DocumentIngestResponse(
         doc_id=result.doc_id,

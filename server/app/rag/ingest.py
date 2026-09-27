@@ -21,15 +21,15 @@ class IngestResult:
 
 def ingest_document(
     *,
-    data: str,
-    autor: str,
-    tresc: str,
+    doc_date: str,
+    author: str,
+    content: str,
     store: QdrantStore,
     embedder: EmbeddingProvider,
     settings: Settings,
 ) -> IngestResult:
-    document_id = compute_doc_id(tresc)
-    title = extract_title(tresc) or f"Dokument {document_id[:8]}"
+    document_id = compute_doc_id(content)
+    title = extract_title(content) or f"Document {document_id[:8]}"
 
     if store.document_exists(document_id):
         return IngestResult(
@@ -40,7 +40,7 @@ def ingest_document(
         )
 
     chunks = build_chunks(
-        tresc,
+        content,
         max_tokens=settings.chunk_max_tokens,
         overlap_tokens=settings.chunk_overlap_tokens,
         breadcrumbs=settings.breadcrumbs,
@@ -55,8 +55,8 @@ def ingest_document(
     meta = DocumentMeta(
         doc_id=document_id,
         title=title,
-        author=autor,
-        doc_date=data,
+        author=author,
+        doc_date=doc_date,
         embedding_model=embedder.model_id,
         ingested_at=datetime.now(UTC).isoformat(),
     )
