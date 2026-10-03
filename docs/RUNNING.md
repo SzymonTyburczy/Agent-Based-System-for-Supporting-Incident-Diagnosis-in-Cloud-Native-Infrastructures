@@ -14,15 +14,17 @@ example-infrastructure  →  agent-core  →  client
 
                    client  →  server  ⇠  agent-core
           (Documentation view:   (RAG knowledge base:    (knowledge-base tool,
-           Send ingests docs)     Qdrant + Ollama)        not registered yet)
+           Send ingests docs)     Qdrant + Ollama)        optional retrieval)
 ```
 
 `doc-converter` needs neither the cluster nor the agent. Start it before the client
 when you want to prepare a PDF in the Documentation view. Markdown and text files
 work without it. `server/` (the RAG knowledge base) needs Docker for Qdrant and Ollama
 for embeddings; start it before the client if you want the Documentation view's
-**Send** to work. The agent's knowledge-base tool is not wired yet, so ingested
-documents do not yet influence diagnoses.
+**Send** to work. Set the agent's `RAG_API_URL=http://localhost:8100` to enable
+`search_knowledge_base` in webhook and polling modes. Retrieved documents enter
+the LLM context when it calls the tool; an unavailable RAG service does not prevent
+startup or diagnosis using telemetry. An empty URL disables the tool.
 
 Alerts flow **infra → agent-core** (via webhook or MCP), and reports flow
 **agent-core → client** (via REST + SSE). Start them in that order — each
@@ -164,6 +166,9 @@ fine if no incidents have fired yet).
 | `MCP_GRAFANA_TOOL_ALLOWLIST` | curated ~20-tool list | which MCP tools get registered (avoids TPM rate limits) |
 | `KUBECTL_ALLOWED_NAMESPACES` | `otel-demo` | empty = no restriction |
 | `AGENT_MAX_ITERATIONS` | `12` | ReAct loop step budget per investigation |
+| `RAG_API_URL` | empty in code; `http://localhost:8100` in `.env.example` | enables the documentation search tool; empty disables it |
+| `RAG_API_TOKEN` | empty | must match the RAG server's `IDAR_API_TOKEN` when enabled |
+| `RAG_TOP_K` / `RAG_TIMEOUT_SECONDS` | `5` / `30` | retrieved excerpt count (1–20) and total search timeout (up to 300 seconds) |
 | `AGENT_POLL_INTERVAL_SECONDS` | `60` | `main.py` only; controls the polling interval |
 | `AGENT_RUN_ONCE` | `false` | `main.py` only; one investigation then exit, for smoke tests |
 | `WEBHOOK_HOST` / `WEBHOOK_PORT` | `0.0.0.0` / `8090` in `.env.example` | read by the Docker startup command; direct Uvicorn invocation uses its CLI flags |

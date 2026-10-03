@@ -32,6 +32,7 @@ from agent_core.report import generate_report, save_report
 from agent_core.tools.cli_tools import KubectlGetPodsTool, KubectlPodDiagnosticsTool
 from agent_core.tools.mcp_client import MCPServerConnection
 from agent_core.tools.registry import ToolRegistry
+from agent_core.tools.rag import register_rag_tool
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 # Third-party HTTP/transport chatter (one line per SSE message, per retry,
@@ -57,6 +58,7 @@ async def build_registry(settings: Settings, mcp: MCPServerConnection) -> ToolRe
     namespaces = settings.kubectl_namespaces()
     registry.register(KubectlGetPodsTool(allowed_namespaces=namespaces))
     registry.register(KubectlPodDiagnosticsTool(allowed_namespaces=namespaces))
+    register_rag_tool(registry, settings)
 
     # Tools discovered from the MCP server, restricted to an allowlist.
     # Without this, mcp-grafana can return 60+ tools (on-call scheduling,

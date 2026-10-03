@@ -67,6 +67,28 @@ Run Grafana MCP with write tools disabled and use read-only Kubernetes permissio
 Keep secrets out of Git. Container addresses, volume paths, and environment-variable
 handling are covered in [CONTAINERS.md](../docs/CONTAINERS.md).
 
+## Documentation retrieval (RAG)
+
+Set `RAG_API_URL=http://localhost:8100` for a locally running knowledge base,
+or `http://rag-server:8080` inside namespace `idar` (the Kubernetes ConfigMap
+already sets this). In Docker, use an address reachable from the agent container,
+such as `http://host.docker.internal:8100` on Docker Desktop.
+Set `RAG_API_TOKEN` to the server's `IDAR_API_TOKEN` if authentication is enabled.
+An empty `RAG_API_URL` disables retrieval; the code default is empty.
+
+Both webhook and polling modes expose the read-only `search_knowledge_base` tool
+to the LLM. The prompt asks it to search relevant runbooks before concluding,
+verify them against telemetry and cite title, document ID and section path.
+Tool invocation and citation remain model-driven, not a guaranteed search on every
+incident. Retrieved text is reference data, not instructions for the agent.
+
+`RAG_TOP_K` controls the number of excerpts (default 5, range 1–20).
+Each excerpt is limited to 4000 characters and marked when truncated.
+`RAG_TIMEOUT_SECONDS` bounds the search duration (default 30, maximum 300).
+There is no RAG startup dependency: timeout, authentication or server errors become
+tool errors, allowing diagnosis to continue. No matches produce an empty result.
+Ingest documents through the panel before testing retrieval.
+
 ## Execution modes
 
 | Entry point | Behavior | Output |
@@ -103,4 +125,4 @@ For manual webhook tests and expected results, see [TESTING.md](../docs/TESTING.
 Core modules live under `agent_core/`: `agent/` implements the loop, `llm/` contains
 provider adapters, `tools/` contains diagnostic adapters, and `report.py` /
 `reports_store.py` handle report generation and storage. Add new tools through
-`ToolRegistry`; RAG and Slack integration remain future work.
+`ToolRegistry`; Slack integration remains future work.

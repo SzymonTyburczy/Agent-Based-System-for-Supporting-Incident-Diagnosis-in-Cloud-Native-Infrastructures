@@ -6,7 +6,7 @@ The objective of this engineering thesis is to design and implement a prototype 
 ## Key Features
 - **Telemetry Data Integration**: Utilizes metrics, logs, and system events from various monitoring sources.
 - **Agent-Based Architecture**: Reacts to alerts from the monitoring stack and analyzes the current state of the infrastructure to diagnose the underlying incident.
-- **Retrieval-Augmented Generation (RAG)**: Retrieves domain-specific technical knowledge from documentation to assist in the diagnosis process.
+- **Retrieval-Augmented Generation (RAG)**: With `RAG_API_URL` configured, the diagnostic agent can search ingested documentation through `search_knowledge_base` and use the returned sources alongside live telemetry.
 - **Automated Diagnostic Reports**: Generates structured reports containing potential root causes of incidents and recommended remediation actions.
 - **Decision Support System**: The level of system autonomy is limited to decision support only; the system will not execute remediation actions automatically.
 

@@ -92,7 +92,7 @@ the ones your configuration needs:
 
 | Secret | Keys | When |
 | --- | --- | --- |
-| `agent-core-secrets` | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`, `WEBHOOK_SHARED_SECRET`, `CLIENT_API_TOKEN` | the default `LLM_PROVIDER=openai` needs its key, or the agent exits at startup |
+| `agent-core-secrets` | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`, `WEBHOOK_SHARED_SECRET`, `CLIENT_API_TOKEN`, `RAG_API_TOKEN` | the default `LLM_PROVIDER=openai` needs its key; `RAG_API_TOKEN` must match `IDAR_API_TOKEN` when RAG authentication is enabled |
 | `rag-server-secrets` | `IDAR_API_TOKEN` | to require a bearer token on the RAG API |
 | `doc-converter-secrets` | `API_TOKEN` | to require a bearer token on `/convert` |
 

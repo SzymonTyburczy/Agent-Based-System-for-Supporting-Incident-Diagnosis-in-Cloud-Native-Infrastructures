@@ -62,7 +62,7 @@ flowchart LR
     Loop --> Registry[Tool registry]
     Registry -->|kubectl: pods and events| KAPI
     Registry -->|MCP over SSE| MCP
-    Registry -.->|Planned: POST /api/search| RAG
+    Registry -->|search_knowledge_base: POST /api/search| RAG
     Worker --> Report[Structured report generation]
     Report <-->|Formatting request| LLM
     Report --> JSON[JSON files]
@@ -81,8 +81,8 @@ The Grafana MCP server is a separate service, not a
 process embedded in the agent image. Kubernetes information also has a separate
 path: the agent invokes kubectl directly, independently of MCP. The RAG knowledge
 base is a fourth service with its own storage (Qdrant) and embedding engine (Ollama);
-today it is exercised through its own HTTP API, and the dashed edges are the planned
-panel and agent integrations.
+the panel ingests documents through its HTTP API and the agent searches them through
+`search_knowledge_base` when `RAG_API_URL` is configured.
 
 ## Incident flow
 
@@ -203,11 +203,12 @@ every intermediate tool call.
 The RAG backend exists as the separate `server/` service: `POST /api/documents`
 accepts the panel's `{data, autor, tresc}` payload, chunks and embeds it into Qdrant,
 and `POST /api/search` returns the most relevant documentation fragments with their
-provenance (document, section path, author, date, score). Both integrations are
-The panel's **Send** posts the prepared document to `/api/documents`, so the knowledge
-base fills up through the UI. The remaining gap is on the agent side: its tool registry
-has no knowledge-base tool, so investigations still do not consult the documentation,
-and retrieval therefore has no effect on a report yet. The chat panel has been removed;
+provenance (document, section path, author, date, score). The panel's **Send** posts
+the prepared document to `/api/documents`. Both agent entrypoints register
+`search_knowledge_base` when `RAG_API_URL` is nonempty. The model chooses a query,
+receives source excerpts as a tool result, and is instructed to cite sources and
+verify them against live telemetry. Retrieval failures are tool errors, not startup
+failures; empty results are valid. The chat panel has been removed;
 RAG-backed chat remains future work. PDF conversion uses the
 local `doc-converter` service with Docling. Default conversion does not use an LLM
 API or send documents to an external provider. Optional figure descriptions can use
