@@ -32,7 +32,8 @@ REPORT_SYSTEM_PROMPT = (
     "list view to know what happened, without opening the full report.\n"
     '- "error_sources": a list of strings identifying where the evidence '
     "for the problem was found (e.g. specific pods, log queries, metrics, "
-    "dashboards).\n"
+    "dashboards). Preserve any cited runbook title, doc_id and section path "
+    "as documentation references, distinct from observed telemetry.\n"
     '- "problem": a concise paragraph describing what is actually wrong.\n'
     '- "remediations": a list of strings, each one concrete suggested next '
     "step.\n"

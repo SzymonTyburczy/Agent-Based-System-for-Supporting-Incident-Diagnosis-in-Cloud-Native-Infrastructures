@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+from pydantic import Field
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from agent_core.llm.base import LLMProvider
@@ -40,6 +42,12 @@ class Settings(BaseSettings):
     mcp_grafana_tool_allowlist: str = ""
 
     agent_max_iterations: int = 12
+
+    # Empty URL disables retrieval; a failed search never blocks agent startup.
+    rag_api_url: str = ""
+    rag_api_token: str | None = None
+    rag_top_k: int = Field(default=5, ge=1, le=20)
+    rag_timeout_seconds: float = Field(default=30, gt=0, le=300)
 
     # How often (seconds) main.py polls the alerting tool for firing alerts
     # when running continuously. See agent_run_once below for the

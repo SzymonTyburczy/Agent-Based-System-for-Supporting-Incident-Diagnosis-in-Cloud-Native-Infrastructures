@@ -52,6 +52,7 @@ from agent_core.reports_store import ReportRecord, ReportsStore
 from agent_core.tools.cli_tools import KubectlGetPodsTool, KubectlPodDiagnosticsTool
 from agent_core.tools.mcp_client import MCPServerConnection
 from agent_core.tools.registry import ToolRegistry
+from agent_core.tools.rag import register_rag_tool
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 for _noisy_logger in ("httpx", "openai", "openai._base_client", "mcp", "uvicorn.access"):
@@ -106,6 +107,7 @@ async def build_registry(settings: Settings, mcp: MCPServerConnection) -> ToolRe
     namespaces = settings.kubectl_namespaces()
     registry.register(KubectlGetPodsTool(allowed_namespaces=namespaces))
     registry.register(KubectlPodDiagnosticsTool(allowed_namespaces=namespaces))
+    register_rag_tool(registry, settings)
 
     allowlist = settings.mcp_tool_allowlist()
     mcp_tools = await mcp.discover_tools(prefix=settings.mcp_grafana_tool_prefix, only=allowlist)

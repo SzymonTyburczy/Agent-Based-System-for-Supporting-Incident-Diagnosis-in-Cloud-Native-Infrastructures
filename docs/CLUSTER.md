@@ -40,7 +40,7 @@ flowchart TB
         RAG --> OllamaSvc
         Qdrant --> Vectors
         Ollama --> Models
-        Agent -.->|planned: POST /api/search| RAGSvc
+        Agent -->|POST /api/search| RAGSvc
     end
 
     subgraph Observability[namespace: observability]

@@ -325,6 +325,23 @@ between models, so compare rankings, not raw scores. DELETE returns `204` and
 the Authorization header on the `/api/documents` and `/api/search` calls;
 `/api/health` stays open.
 
+### 9. Agent retrieval from the knowledge base
+
+Keep the runbook ingested in step 8 (or ingest it again after that step's DELETE).
+Set `RAG_API_URL=http://localhost:8100` for a host-process agent, or
+`http://host.docker.internal:8100` for the Docker Desktop agent. The Kubernetes
+ConfigMap uses `http://rag-server:8080`. Set `RAG_API_TOKEN` to match the server's
+`IDAR_API_TOKEN` when configured. Restart the host process, recreate the Docker
+container with the new environment, or restart the Kubernetes Deployment.
+
+Submit an alert as in step 3 with symptoms matching the runbook. Startup logs should
+list `search_knowledge_base`; a retrieval call logs `tool=search_knowledge_base`.
+Check the diagnosis for a relevant document title/ID and section reference, alongside
+telemetry evidence. Retrieval is selected by the LLM, so a report alone does not
+prove it called the tool. No matches or unavailable RAG should allow diagnosis to
+continue with the missing documentation context noted. Clear `RAG_API_URL` to
+disable the tool entirely. These live checks use the configured LLM provider.
+
 ## Automated tests without live infrastructure
 
 The backend tests use fake providers, mocked MCP sessions, and isolated report stores.

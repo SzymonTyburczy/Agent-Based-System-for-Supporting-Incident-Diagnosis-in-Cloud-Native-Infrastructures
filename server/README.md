@@ -38,7 +38,7 @@ it to `.env` to override the defaults; in production
 ## Search contract (for agents)
 
 `POST /api/search` is a team interface: the diagnostic agents use it as their
-retrieval tool. The full specification is in Swagger (`/docs`); a quick test:
+retrieval tool when `RAG_API_URL` is configured in agent-core. The full specification is in Swagger (`/docs`); a quick test:
 
 ```bash
 curl -X POST http://localhost:8100/api/search -H "Content-Type: application/json" -d "{\"query\": \"the pod keeps restarting, what should I check?\", \"top_k\": 5}"
