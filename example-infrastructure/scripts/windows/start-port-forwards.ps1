@@ -14,6 +14,7 @@ Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile -Command "$ho
 Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile -Command "$host.ui.RawUI.WindowTitle=''Prometheus-API (9090)''; while($true) { kubectl port-forward svc/prom-stack-kube-prometheus-prometheus 9090:9090 -n observability; Start-Sleep -Seconds 2 }"' -WindowStyle Minimized
 Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile -Command "$host.ui.RawUI.WindowTitle=''Alertmanager-UI (9093)''; while($true) { kubectl port-forward svc/prom-stack-kube-prometheus-alertmanager 9093:9093 -n observability; Start-Sleep -Seconds 2 }"' -WindowStyle Minimized
 Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile -Command "$host.ui.RawUI.WindowTitle=''Grafana-MCP-Server (8000)''; while($true) { kubectl port-forward svc/grafana-mcp 8000:8000 -n observability; Start-Sleep -Seconds 2 }"' -WindowStyle Minimized
+Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile -Command "$host.ui.RawUI.WindowTitle=''IDAR-Client-UI (3000)''; while($true) { kubectl port-forward svc/idar-client 3000:8080 -n idar; Start-Sleep -Seconds 2 }"' -WindowStyle Minimized
 
 Write-Host "`nActive Port Forwards running in minimized windows:" -ForegroundColor Green
 Write-Host "  1. Grafana UI:                 http://localhost:8081 (admin / admin)" -ForegroundColor Cyan
@@ -21,3 +22,4 @@ Write-Host "  2. OpenTelemetry Demo Store:   http://localhost:8080" -ForegroundC
 Write-Host "  3. Prometheus API:             http://localhost:9090" -ForegroundColor Cyan
 Write-Host "  4. Alertmanager UI:            http://localhost:9093" -ForegroundColor Cyan
 Write-Host "  5. Grafana MCP Server (SSE):   http://localhost:8000/sse (--disable-write)" -ForegroundColor Cyan
+Write-Host "  6. IDAR Client UI:             http://localhost:3000" -ForegroundColor Cyan

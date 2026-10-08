@@ -9,6 +9,10 @@ echo "==================================================================="
 echo " DEPLOYING OBSERVABILITY STACK AND OTEL-DEMO"
 echo "==================================================================="
 
+# 0. Deploy Local Path Provisioner (for local PV provisioning)
+echo -e "\n[0/5] Deploying Local Path Provisioner for local storage..."
+kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml
+
 # 1. Create namespaces
 echo -e "\n[1/5] Creating namespaces (observability, otel-demo)..."
 kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
@@ -48,8 +52,12 @@ helm upgrade --install otel-demo open-telemetry/opentelemetry-demo -n otel-demo 
 echo -e "\n[4.5/5] Deploying Custom Prometheus Alerts..."
 kubectl apply -f "${EXAMPLE_INFRA_DIR}/alerts"
 
-# 5. Start background port forwarding
-echo -e "\n[5/5] Starting background port forwarding..."
+# 5. Deploy IDAR System
+echo -e "\n[5/6] Deploying IDAR System..."
+kubectl apply -f "${EXAMPLE_INFRA_DIR}/../k8s"
+
+# 6. Start background port forwarding
+echo -e "\n[6/6] Starting background port forwarding..."
 
 chmod +x "${SCRIPT_DIR}/start-port-forwards.sh" || true
 "${SCRIPT_DIR}/start-port-forwards.sh"
