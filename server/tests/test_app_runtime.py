@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from qdrant_client import QdrantClient
 
 from app.config import Settings
@@ -32,6 +33,13 @@ def test_cors_origins_parse_from_comma_separated_env():
 
     assert listed.cors_origin_list() == ["http://a:1", "http://b:2"]
     assert blank.cors_origin_list() == ["*"]
+
+
+@pytest.mark.parametrize("override", [{"chunk_max_tokens": 0}, {"chunk_overlap_tokens": -1}])
+def test_unusable_chunk_budget_is_rejected_at_startup(override: dict[str, int]):
+    # IDAR_CHUNK_MAX_TOKENS=0 used to hang every ingest in an endless loop.
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **override)
 
 
 def test_cors_headers_follow_settings():
