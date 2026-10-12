@@ -18,8 +18,17 @@ from doc_converter.pipeline import (
 logger = logging.getLogger(__name__)
 
 
+def _configure_logging() -> None:
+    """Gunicorn imports create_app() and never runs main(), and it sets up only
+    its own loggers, so without this the INFO logs (conversions, VLM config)
+    are dropped. basicConfig does nothing when the root logger already has
+    handlers (pytest's, or a gunicorn --log-config)."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+
 def create_app(settings: Settings | None = None, pipeline=None) -> Flask:
     """`pipeline` is injectable so the tests run without loading Docling."""
+    _configure_logging()
     settings = settings or Settings()
     app = Flask(__name__)
     # The single upload-size guard: Werkzeug rejects an oversized body before the
@@ -93,7 +102,7 @@ def create_app(settings: Settings | None = None, pipeline=None) -> Flask:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    _configure_logging()
     settings = Settings()
     logger.info("Loading Docling models — the first start takes 60-110s…")
     app = create_app(settings)

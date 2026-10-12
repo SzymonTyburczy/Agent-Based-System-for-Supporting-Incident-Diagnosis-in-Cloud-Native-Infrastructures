@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import io
+import subprocess
+import sys
+from pathlib import Path
 
 from doc_converter.app import create_app
 from doc_converter.config import Settings
@@ -108,3 +111,24 @@ def test_cors_answers_only_the_configured_origin():
 
     assert allowed.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
     assert "Access-Control-Allow-Origin" not in denied.headers
+
+
+def test_create_app_alone_logs_info():
+    # Gunicorn calls create_app() without main(). A fresh interpreter has no
+    # root handlers, as under gunicorn; any non-None pipeline skips Docling.
+    script = (
+        "import logging\n"
+        "from doc_converter.app import create_app\n"
+        "from doc_converter.config import Settings\n"
+        "create_app(Settings(_env_file=None), pipeline=object())\n"
+        "logging.getLogger('doc_converter.app').info('Converted runbook.pdf')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "INFO doc_converter.app: Converted runbook.pdf" in result.stderr
