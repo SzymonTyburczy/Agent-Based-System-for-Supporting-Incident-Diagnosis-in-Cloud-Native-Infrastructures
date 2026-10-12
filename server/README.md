@@ -80,7 +80,9 @@ docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build 
   Desktop: WSL2 + the NVIDIA driver). Without a GPU, `0.6b` runs well on the CPU and
   `8b` is much slower (ingesting a large document takes minutes).
 
-The containerized API is at <http://localhost:8100> (port mapping `8100:8080`).
+The containerized API is at <http://localhost:8100> (port mapping `127.0.0.1:8100:8080`).
+Compose publishes the API and Qdrant on loopback only: neither has auth by default,
+and Docker's published ports bypass the host firewall.
 A local `.env` is loaded when present, but compose overrides `IDAR_QDRANT_URL` and
 `IDAR_OLLAMA_URL`: `localhost` inside a container is the container itself.
 Qdrant data lives in the `qdrant_storage` volume and Ollama models in
