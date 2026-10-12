@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import json
+
+import pytest
+
+from agent_core.tools import cli_tools
+from agent_core.tools.base import ToolResult
 from agent_core.tools.cli_tools import (
     MAX_OUTPUT_CHARS,
+    KubectlGetPodsTool,
+    KubectlPodDiagnosticsTool,
     _truncate,
     summarize_events,
     summarize_pod,
@@ -124,3 +132,80 @@ def test_summarize_events_respects_limit():
     result = summarize_events(events, limit=3)
 
     assert len(result) == 3
+
+
+@pytest.fixture
+def kubectl_calls(monkeypatch):
+    """Replaces the kubectl subprocess with a fake that records each argv and
+    answers with an empty-but-valid JSON document."""
+    calls: list[tuple[str, ...]] = []
+
+    async def fake_run_kubectl(*args: str, **kwargs) -> ToolResult:
+        calls.append(args)
+        return ToolResult(success=True, data=json.dumps({"items": []}))
+
+    monkeypatch.setattr(cli_tools, "_run_kubectl", fake_run_kubectl)
+    return calls
+
+
+INVALID_POD_NAMES = [
+    "-A",
+    "--kubeconfig=/x",
+    "--server=http://attacker.example",
+    "Checkout-7d9f8c-abcde",
+    "",
+    "a" * 254,
+    "checkout\n",
+    "checkout-",
+]
+
+
+@pytest.mark.parametrize("pod_name", INVALID_POD_NAMES)
+async def test_pod_diagnostics_rejects_invalid_pod_name_without_running_kubectl(
+    kubectl_calls, pod_name
+):
+    tool = KubectlPodDiagnosticsTool(allowed_namespaces={"otel-demo"})
+
+    result = await tool.execute(namespace="otel-demo", pod_name=pod_name)
+
+    assert not result.success
+    assert "not a valid Kubernetes pod name" in result.error
+    assert kubectl_calls == []
+
+
+@pytest.mark.parametrize(
+    "namespace", ["--all-namespaces", "Otel-demo", "", "otel.demo", "a" * 64]
+)
+async def test_cli_tools_reject_invalid_namespace_without_running_kubectl(
+    kubectl_calls, namespace
+):
+    # No allowlist (local-dev mode), so only the name check stands between
+    # the LLM-supplied value and kubectl's argv.
+    for result in (
+        await KubectlGetPodsTool().execute(namespace=namespace),
+        await KubectlPodDiagnosticsTool().execute(namespace=namespace, pod_name="checkout"),
+    ):
+        assert not result.success
+        assert "not a valid Kubernetes namespace name" in result.error
+    assert kubectl_calls == []
+
+
+async def test_pod_diagnostics_passes_valid_pod_name_to_kubectl(kubectl_calls):
+    tool = KubectlPodDiagnosticsTool(allowed_namespaces={"otel-demo"})
+
+    result = await tool.execute(namespace="otel-demo", pod_name="checkout-7d9f8c-abcde")
+
+    assert result.success
+    assert kubectl_calls[0] == (
+        "get", "pod", "checkout-7d9f8c-abcde", "-n", "otel-demo", "-o", "json"
+    )
+    assert "involvedObject.name=checkout-7d9f8c-abcde" in kubectl_calls[1]
+
+
+async def test_get_pods_passes_valid_namespace_to_kubectl(kubectl_calls):
+    tool = KubectlGetPodsTool(allowed_namespaces={"otel-demo"})
+
+    result = await tool.execute(namespace="otel-demo")
+
+    assert result.success
+    assert kubectl_calls == [("get", "pods", "-n", "otel-demo", "-o", "wide")]
