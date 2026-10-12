@@ -190,10 +190,8 @@ in [CONTAINERS.md](CONTAINERS.md). Restart the tunnel if its target Pod is repla
 
 ## Current boundaries
 
-The intended SSE feed currently has a route-ordering issue: `/reports/{report_id}`
-is registered before `/reports/stream`. See the
-[SSE test](TESTING.md#5-check-live-updates-separately) for the expected behavior
-and workaround. General troubleshooting is in [TESTING.md](TESTING.md#troubleshooting).
+The [SSE test](TESTING.md#5-check-live-updates-separately) checks the live feed.
+General troubleshooting is in [TESTING.md](TESTING.md#troubleshooting).
 
 The queue and SSE broadcaster are in process memory. Use one API worker and one
 agent replica; queued or active investigations are not durable across restarts.

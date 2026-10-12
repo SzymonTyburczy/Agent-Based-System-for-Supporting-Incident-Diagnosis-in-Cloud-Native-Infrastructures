@@ -128,3 +128,21 @@ def test_reports_endpoints_accept_token_as_query_param(client):
 
     wrong = client.get("/reports", params={"token": "nope"})
     assert wrong.status_code == 401
+
+
+def test_reports_stream_is_not_shadowed_by_report_detail_route(client, monkeypatch):
+    # /reports/stream must resolve to the SSE endpoint, not to
+    # GET /reports/{report_id} with report_id="stream" (which answers 404).
+    # The stream itself never ends, so report the client as disconnected:
+    # the generator then stops right after its initial ": connected" frame.
+    async def disconnected(self) -> bool:
+        return True
+
+    monkeypatch.setattr(wh.Request, "is_disconnected", disconnected)
+
+    response = client.get("/reports/stream")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.text == ": connected\n\n"
+    assert wh.state.broadcaster.subscriber_count == 0

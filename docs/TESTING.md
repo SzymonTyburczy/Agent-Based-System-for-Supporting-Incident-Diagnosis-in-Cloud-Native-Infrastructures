@@ -198,7 +198,7 @@ also requires mounting the same data volume in the replacement container.
 
 ### 5. Check live updates separately
 
-The intended SSE endpoint can be inspected without invoking the LLM:
+The SSE endpoint can be inspected without invoking the LLM:
 
 **PowerShell**
 
@@ -216,11 +216,6 @@ A working stream returns `text/event-stream`, an initial `: connected` comment,
 and keep-alive comments; status changes should produce `report_updated` events.
 The timeout after 20 seconds is intentional. With authentication enabled, curl can
 send an Authorization header; the browser EventSource uses a `token` query parameter.
-
-**Current limitation:** `webhook_server.py` registers `/reports/{report_id}` before
-`/reports/stream`. The dynamic route can capture `stream` as a report ID and return
-404 instead of opening SSE. Until route ordering is fixed, refresh the page to load
-new reports; passing the REST checks does not prove that live updates work.
 
 ### 6. Validate automatic alert delivery
 

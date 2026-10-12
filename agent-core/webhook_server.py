@@ -24,6 +24,7 @@ replacement — see README for the resilience argument.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import time
 import uuid
@@ -65,6 +66,13 @@ logger = logging.getLogger("webhook")
 # see its body — so .env is only read once.
 _settings = Settings()
 
+# Each queued alert costs a full investigation (up to AGENT_MAX_ITERATIONS+2
+# LLM calls), and the worker drains them one at a time, so an unbounded
+# queue would let a burst or a flood of webhook calls pile up memory and LLM
+# spend without limit. Past this depth the webhook answers 503 instead, and
+# Alertmanager retries the notification later.
+ALERT_QUEUE_MAX_SIZE = 100
+
 
 @dataclass
 class QueuedIncident:
@@ -93,7 +101,7 @@ class AppState:
         self.mcp: MCPServerConnection | None = None
         self.reports_store: ReportsStore | None = None
         self.broadcaster: ReportEventBroadcaster | None = None
-        self.queue: asyncio.Queue[QueuedIncident] = asyncio.Queue()
+        self.queue: asyncio.Queue[QueuedIncident] = asyncio.Queue(maxsize=ALERT_QUEUE_MAX_SIZE)
         self.worker_task: asyncio.Task | None = None
 
 
@@ -261,7 +269,11 @@ async def alerts_webhook(
 
     if settings.webhook_shared_secret:
         expected = f"Bearer {settings.webhook_shared_secret}"
-        if authorization != expected:
+        # Constant-time comparison so response timing can't be used to guess
+        # the secret byte by byte. Compared as bytes: compare_digest rejects
+        # non-ASCII str with a TypeError, which would turn a bogus header
+        # into a 500 instead of a 401.
+        if not hmac.compare_digest((authorization or "").encode(), expected.encode()):
             raise HTTPException(status_code=401, detail="invalid or missing Authorization header")
 
     payload = await request.json()
@@ -275,7 +287,17 @@ async def alerts_webhook(
         return {"status": "ignored"}
 
     meta = extract_incident_meta_from_webhook(payload)
-    await state.queue.put(QueuedIncident(description=incident_description, meta=meta))
+    try:
+        state.queue.put_nowait(QueuedIncident(description=incident_description, meta=meta))
+    except asyncio.QueueFull:
+        # Refuse rather than wait: blocking here would just hold the HTTP
+        # request open, while a 5xx makes Alertmanager retry the notification.
+        logger.warning(
+            "Investigation queue is full (%d pending); rejecting webhook (service=%s).",
+            state.queue.qsize(),
+            meta.service,
+        )
+        raise HTTPException(status_code=503, detail="investigation queue is full")
     logger.info(
         "Queued investigation from webhook (service=%s, severity=%s, queue depth now %d).",
         meta.service,
@@ -295,35 +317,9 @@ async def list_reports(
     return [ReportSummary.model_validate(record.to_dict()) for record in records]
 
 
-@app.get("/reports/{report_id}")
-async def get_report(
-    report_id: str,
-    _: None = Depends(require_client_token),
-) -> ReportDetail:
-    assert state.reports_store is not None
-    record = state.reports_store.get(report_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="report not found")
-    return ReportDetail.model_validate(record.to_dict())
-
-
-@app.patch("/reports/{report_id}")
-async def patch_report_status(
-    report_id: str,
-    body: StatusUpdate,
-    _: None = Depends(require_client_token),
-) -> ReportDetail:
-    assert state.reports_store is not None
-    assert state.broadcaster is not None
-
-    updated = state.reports_store.update_status(report_id, body.status)
-    if updated is None:
-        raise HTTPException(status_code=404, detail="report not found")
-
-    await state.broadcaster.publish("report_updated", updated.to_dict())
-    return ReportDetail.model_validate(updated.to_dict())
-
-
+# Registered before GET /reports/{report_id}: routes match in declaration
+# order, so the dynamic route would otherwise capture "stream" as a
+# report ID and answer 404 instead of opening the SSE feed.
 @app.get("/reports/stream")
 async def reports_stream(
     request: Request,
@@ -354,6 +350,35 @@ async def reports_stream(
             state.broadcaster.unsubscribe(queue)
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
+
+
+@app.get("/reports/{report_id}")
+async def get_report(
+    report_id: str,
+    _: None = Depends(require_client_token),
+) -> ReportDetail:
+    assert state.reports_store is not None
+    record = state.reports_store.get(report_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return ReportDetail.model_validate(record.to_dict())
+
+
+@app.patch("/reports/{report_id}")
+async def patch_report_status(
+    report_id: str,
+    body: StatusUpdate,
+    _: None = Depends(require_client_token),
+) -> ReportDetail:
+    assert state.reports_store is not None
+    assert state.broadcaster is not None
+
+    updated = state.reports_store.update_status(report_id, body.status)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="report not found")
+
+    await state.broadcaster.publish("report_updated", updated.to_dict())
+    return ReportDetail.model_validate(updated.to_dict())
 
 
 @app.get("/healthz")
