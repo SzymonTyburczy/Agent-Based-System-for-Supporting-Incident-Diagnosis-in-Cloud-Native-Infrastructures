@@ -23,7 +23,14 @@ export function ReportsStream({ children }: { children: ReactNode }) {
         // drops a subscriber's OLDEST pending event once its 32-slot queue is
         // full, so a briefly-disconnected client provably misses updates that
         // only a refetch repairs.
-        if (openedOnce.current) void client.invalidateQueries({ queryKey: reportKeys.all });
+        if (openedOnce.current) {
+          void client.invalidateQueries({ queryKey: reportKeys.all });
+        } else if (client.getQueryState(reportKeys.list)?.status === "error") {
+          // First open: the agent is reachable now, so a list whose initial
+          // GET failed (agent not up yet) is worth another try — with
+          // `staleTime: Infinity` nothing else would retry it.
+          void client.invalidateQueries({ queryKey: reportKeys.list });
+        }
         openedOnce.current = true;
       },
     });
