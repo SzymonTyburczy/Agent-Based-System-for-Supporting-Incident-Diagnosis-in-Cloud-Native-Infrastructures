@@ -14,7 +14,9 @@ Main views:
   the form; the confirmation distinguishes a fresh ingest from a document the server
   already had (`already_exists` — document ids are a hash of `tresc`). A failure keeps
   the draft on screen, because converting and hand-editing a document is the expensive
-  part. The in-progress draft is persisted to localStorage.
+  part; for the same reason the form is locked while Send is in flight, so the reset
+  after success never wipes an edit made meanwhile. The in-progress draft is persisted
+  to localStorage.
 - **Issues** — split into pending and resolved, loaded from `agent-core`'s `/reports*`
   API and kept in sync over SSE. TanStack Query owns the cache: one `GET /reports` for the
   app's lifetime (`staleTime: Infinity` — the SSE stream is the freshness mechanism, not
@@ -52,6 +54,11 @@ Conventions:
 - Named exports everywhere (no default exports).
 - `client/.env` is tracked with an empty key as a template — never commit a real key;
   after pasting one locally run `git update-index --skip-worktree client/.env`.
+- Its base URLs are relative `/api/*` paths, routed by the dev proxy in `vite.config.ts`
+  under `npm run dev`. A Docker image never sees `client/.env` (dockerignored) and takes
+  its URLs from build args, absolute by default; `nginx.conf` serves the same `/api/*`
+  routes, used only by an image built with `--build-arg VITE_*_URL=/api/...`. Keep the
+  two route lists in sync.
 
 Report rendering — standing rules:
 

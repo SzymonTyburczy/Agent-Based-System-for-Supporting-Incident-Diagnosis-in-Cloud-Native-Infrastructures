@@ -131,22 +131,25 @@ is the equivalent that does not depend on uv's script launchers; see the
 ```bash
 cd client
 npm ci
-
-# Configure client/.env locally; do not commit real keys.
+npm run dev
 ```
 
+No configuration is needed for the URLs. The tracked `client/.env` points the panel at
+`/api/agent`, `/api/converter` and `/api/rag`, and the Vite dev proxy
+(`client/vite.config.ts`) forwards them to `localhost:8090`, `localhost:5001` and
+`localhost:8100` — the ports from steps 2–4. A token goes in the same file only if the
+matching service requires one; do not commit real values:
+
 ```
-VITE_AGENT_API_URL=http://localhost:8090
 VITE_AGENT_API_TOKEN=<only if CLIENT_API_TOKEN is set in agent-core/.env>
-VITE_CONVERTER_URL=http://localhost:5001
 VITE_CONVERTER_TOKEN=<only if API_TOKEN is set in doc-converter/.env>
-VITE_RAG_API_URL=http://localhost:8100
 VITE_RAG_API_TOKEN=<only if IDAR_API_TOKEN is set in server/.env>
 ```
 
-```bash
-npm run dev
-```
+To bypass the proxy, set absolute URLs instead (e.g.
+`VITE_AGENT_API_URL=http://localhost:8090`). The browser then calls each service
+cross-origin, so its CORS allowlist must include the panel origin; the defaults already
+allow `http://localhost:5173`.
 
 Open the printed URL (usually `http://localhost:5173`) and go to
 `/issues` — it should load without a connection error (an empty list is
@@ -209,11 +212,11 @@ All optional; the defaults match step 4.
 
 | Variable | Purpose |
 |---|---|
-| `VITE_AGENT_API_URL` | base URL of `agent-core`'s `webhook_server` (e.g. `http://localhost:8090`) |
+| `VITE_AGENT_API_URL` | base URL of `agent-core`'s `webhook_server`: `/api/agent` (proxied to `localhost:8090` by Vite in development) or an absolute URL such as `http://localhost:8090` |
 | `VITE_AGENT_API_TOKEN` | only needed if `CLIENT_API_TOKEN` is set on the agent-core side |
-| `VITE_CONVERTER_URL` | base URL of the `doc-converter` service (e.g. `http://localhost:5001`) |
+| `VITE_CONVERTER_URL` | base URL of the `doc-converter` service: `/api/converter` (proxied to `localhost:5001`) or an absolute URL such as `http://localhost:5001` |
 | `VITE_CONVERTER_TOKEN` | only needed if `API_TOKEN` is set on the doc-converter side |
-| `VITE_RAG_API_URL` | base URL of the RAG knowledge base (e.g. `http://localhost:8100`); the Documentation view's **Send** target |
+| `VITE_RAG_API_URL` | base URL of the RAG knowledge base: `/api/rag` (proxied to `localhost:8100`) or an absolute URL such as `http://localhost:8100`; the Documentation view's **Send** target |
 | `VITE_RAG_API_TOKEN` | only needed if `IDAR_API_TOKEN` is set on the RAG server |
 
 Never commit real values from any `.env`. Frontend `VITE_*` values are public

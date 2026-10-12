@@ -44,13 +44,34 @@ The Issues and Dashboard views need `agent-core`'s webhook server running and re
 (see `VITE_AGENT_API_URL` below) — without it they'll show a connection error rather than
 data.
 
+### Backend URLs
+
+The tracked `client/.env` points the panel at relative paths — `/api/agent`,
+`/api/converter` and `/api/rag` — so the browser only ever talks to the panel's own
+origin. Under `npm run dev`, the dev proxy in `vite.config.ts` forwards these paths to
+locally started services: `agent-core` on `localhost:8090`, `doc-converter` on
+`localhost:5001` and the RAG server on `localhost:8100` (the ports from
+[`docs/RUNNING.md`](../docs/RUNNING.md)). Requests stay same-origin, so no CORS setup
+is needed.
+
+A Docker image never reads `client/.env` (it is dockerignored): it takes the URLs from
+build args, which default to absolute `http://localhost:*` URLs (see `Dockerfile`). The
+image's `nginx.conf` proxies the same `/api/*` paths to the in-cluster services, but the
+panel uses them only when the image is built with the relative paths:
+`--build-arg VITE_AGENT_API_URL=/api/agent`, and likewise
+`VITE_CONVERTER_URL=/api/converter` and `VITE_RAG_API_URL=/api/rag`.
+
+To bypass the proxy, set absolute URLs instead (e.g.
+`VITE_AGENT_API_URL=http://localhost:8090`). Each service must then allow the panel's
+origin in its CORS settings.
+
 ## Document converter
 
 PDF conversion is done by [`doc-converter`](../doc-converter/README.md), a local service — no
-API key lives in this app. Point the client at it:
+API key lives in this app. The client reaches it through:
 
 ```
-VITE_CONVERTER_URL=http://localhost:5001
+VITE_CONVERTER_URL=/api/converter
 VITE_CONVERTER_TOKEN=<only if API_TOKEN is set on the service>
 ```
 
@@ -60,23 +81,24 @@ explains where that key goes (the service's own `.env`, never here).
 ## RAG knowledge base
 
 Documents from the Documentation view are sent to [`server`](../server/README.md), the
-RAG knowledge base. Point the client at it:
+RAG knowledge base. The client reaches it through:
 
 ```
-VITE_RAG_API_URL=http://localhost:8100
+VITE_RAG_API_URL=/api/rag
 VITE_RAG_API_TOKEN=<only if the server runs with IDAR_API_TOKEN set>
 ```
 
-The server must allow this panel's origin — it ships with `IDAR_CORS_ORIGINS` covering
-`http://localhost:5173` (Vite) and `http://localhost:3000` (the panel container).
+With an absolute URL instead, the server must allow this panel's origin — it ships with
+`IDAR_CORS_ORIGINS` covering `http://localhost:5173` (Vite) and `http://localhost:3000`
+(the panel container).
 
 ## Diagnostic agent configuration
 
-The Issues and Dashboard views read from `agent-core`'s webhook server. Add these to
+The Issues and Dashboard views read from `agent-core`'s webhook server, configured in
 `client/.env`:
 
 ```
-VITE_AGENT_API_URL=http://localhost:8090
+VITE_AGENT_API_URL=/api/agent
 VITE_AGENT_API_TOKEN=<only if agent-core was started with CLIENT_API_TOKEN set>
 ```
 
