@@ -19,6 +19,8 @@ interface UploadZoneProps {
   onFile: (file: File) => void;
   onReject: (message: string) => void;
   onReset: () => void;
+  /** Locks the zone, e.g. while the document is being sent. */
+  disabled?: boolean;
 }
 
 export function UploadZone({
@@ -29,9 +31,16 @@ export function UploadZone({
   onFile,
   onReject,
   onReset,
+  disabled = false,
 }: UploadZoneProps) {
+  // No new file while a conversion is running — a second file racing the first
+  // would pair one file's name with another file's content — nor while the
+  // parent is sending, whose reset after success would silently discard it.
+  const locked = disabled || status === "converting";
+
   const onDrop = useCallback(
     (accepted: File[], rejections: FileRejection[]) => {
+      if (locked) return;
       if (accepted.length > 0) {
         onFile(accepted[0]);
         return;
@@ -46,18 +55,18 @@ export function UploadZone({
         );
       }
     },
-    [onFile, onReject],
+    [locked, onFile, onReject],
   );
 
+  // Locked drops are ignored in onDrop rather than via the hook's `disabled`:
+  // a disabled dropzone stops handling the drop event, and the browser then
+  // opens the dropped file in place of the app.
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     multiple: false,
     noClick: true,
     noKeyboard: true,
     maxSize: MAX_FILE_SIZE_BYTES,
-    // Reject new drops while a conversion is running — a second file racing the
-    // first would pair one file's name with another file's content.
-    disabled: status === "converting",
     accept: ACCEPTED_FILE_TYPES,
   });
 
@@ -66,7 +75,7 @@ export function UploadZone({
       {...getRootProps()}
       className={[
         "relative flex min-h-56 flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-colors",
-        isDragActive
+        isDragActive && !locked
           ? "border-[var(--color-brand)] bg-[var(--color-brand)]/5"
           : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-brand)]/50",
       ].join(" ")}
@@ -99,13 +108,15 @@ export function UploadZone({
           <div className="mt-1 flex gap-2">
             <button
               onClick={open}
-              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--color-surface-2)]"
+              disabled={locked}
+              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               Change file
             </button>
             <button
               onClick={onReset}
-              className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] hover:text-white"
+              disabled={locked}
+              className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               <X className="h-3.5 w-3.5" /> Clear
             </button>

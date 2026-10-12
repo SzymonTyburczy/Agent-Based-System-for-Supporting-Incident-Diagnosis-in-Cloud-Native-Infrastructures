@@ -28,10 +28,23 @@ export function getRagApiToken(): string {
   return (import.meta.env.VITE_RAG_API_TOKEN ?? "").trim();
 }
 
+// Storage access throws when the browser blocks site data for this origin. This
+// is read during render, so it must degrade to "no default" rather than take the
+// page down with it.
 export function getDefaultAuthor(): string {
-  return localStorage.getItem(STORAGE_KEYS.defaultAuthor) || "";
+  try {
+    return localStorage.getItem(STORAGE_KEYS.defaultAuthor) || "";
+  } catch {
+    return "";
+  }
 }
 
-export function setDefaultAuthor(value: string): void {
-  localStorage.setItem(STORAGE_KEYS.defaultAuthor, value.trim());
+/** Returns false when storage is unavailable and the default was not saved. */
+export function setDefaultAuthor(value: string): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEYS.defaultAuthor, value.trim());
+    return true;
+  } catch {
+    return false;
+  }
 }

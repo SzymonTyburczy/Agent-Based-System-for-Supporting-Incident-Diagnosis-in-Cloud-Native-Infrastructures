@@ -5,11 +5,15 @@ import { getDefaultAuthor, setDefaultAuthor } from "../lib/settings";
 import { useTransientFlag } from "../hooks/useTransientFlag";
 
 export function SettingsPage() {
-  const [author, setAuthor] = useState(getDefaultAuthor());
+  const [author, setAuthor] = useState(() => getDefaultAuthor());
+  const [saveFailed, setSaveFailed] = useState(false);
   const { flag: saved, trigger: markSaved } = useTransientFlag(1800);
 
   const save = () => {
-    setDefaultAuthor(author);
+    const ok = setDefaultAuthor(author);
+    setSaveFailed(!ok);
+    // Keep the typed value: re-reading blocked storage would erase it.
+    if (!ok) return;
     // Re-read what was actually persisted, so the input never shows a value
     // that differs from storage.
     setAuthor(getDefaultAuthor());
@@ -40,6 +44,15 @@ export function SettingsPage() {
             className="input"
           />
         </div>
+
+        {saveFailed && (
+          <div
+            role="alert"
+            className="rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
+          >
+            Couldn't save — browser storage is blocked for this site.
+          </div>
+        )}
 
         <button
           onClick={save}

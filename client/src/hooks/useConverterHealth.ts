@@ -28,12 +28,17 @@ export function useConverterHealth(): ConverterHealth {
       return { reachable: true, figureDescriptions: body.figure_descriptions === true };
     },
     // The service is started by hand and its config only changes on restart,
-    // so polling would be noise. No retry either: the converter does not bind
-    // its port until the models are loaded, so an early check is refused
-    // outright and no realistic delay would cover a 60-110 s start. The dialog
-    // tells the user to start it and reload.
+    // so once it has answered, polling would be noise. No retry either: the
+    // converter does not bind its port until the models are loaded, so an early
+    // check is refused outright and no realistic delay would cover a 60-110 s
+    // start.
     staleTime: Infinity,
     retry: false,
+    // An unreachable answer is not final, though: the converter handles one
+    // request at a time, so a check made during a long conversion times out
+    // even though the service is up. Re-check slowly until it answers, so the
+    // indicator recovers without a reload.
+    refetchInterval: (query) => (query.state.data?.reachable ? false : 30_000),
   });
 
   return data ?? { reachable: false, figureDescriptions: false };

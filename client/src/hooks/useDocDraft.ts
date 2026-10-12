@@ -53,7 +53,11 @@ export function loadDocDraft(): DocDraft | null {
 }
 
 export function clearDocDraft(): void {
-  localStorage.removeItem(DRAFT_KEY);
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // Storage unavailable — there is no draft to clear.
+  }
 }
 
 function saveDocDraft(draft: DocDraft): void {
@@ -79,7 +83,7 @@ export function useDocDraftPersistence(draft: DocDraft): void {
     const id = setTimeout(() => {
       const empty = draft.status === "idle" && !draft.fileName && !draft.markdown && !draft.author;
       if (empty) {
-        localStorage.removeItem(DRAFT_KEY);
+        clearDocDraft();
       } else {
         saveDocDraft(draft);
       }
