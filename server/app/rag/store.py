@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 from datetime import date
+from itertools import batched
 
 from qdrant_client import QdrantClient, models
 
@@ -9,6 +10,10 @@ from app.rag.ids import point_id
 
 DENSE_VECTOR = "dense"
 SCHEMA_VERSION = 1
+# Qdrant rejects a request body over 32 MB (service.max_request_size_mb), and a
+# 4096-dim point is ~90 KB of JSON, so a few hundred chunks cannot go in one
+# request.
+UPSERT_BATCH_SIZE = 64
 
 _SUMMARY_FIELDS = ["doc_id", "title", "author", "doc_date", "chunk_count", "ingested_at"]
 
@@ -92,7 +97,15 @@ class QdrantStore:
             )
             for chunk, vector in zip(chunks, vectors, strict=True)
         ]
-        self._client.upsert(collection_name=self.alias, points=points)
+        try:
+            for batch in batched(points, UPSERT_BATCH_SIZE):
+                self._client.upsert(collection_name=self.alias, points=list(batch))
+        except Exception:
+            # Best effort: a failed ingest should leave nothing behind. When
+            # Qdrant cannot take this delete either, the leftover chunks fail
+            # document_complete, so the next upload ingests the document again.
+            self.delete_document(meta.doc_id)
+            raise
 
     def _doc_filter(self, document_id: str) -> models.Filter:
         return models.Filter(
@@ -107,6 +120,21 @@ class QdrantStore:
 
     def document_exists(self, document_id: str) -> bool:
         return self.count_chunks(document_id) > 0
+
+    def document_complete(self, document_id: str) -> bool:
+        """Whether every chunk of the document is stored: as many as the
+        `chunk_count` each of them carries. An ingest that failed midway, with
+        its cleanup failing too, leaves fewer."""
+        points, _ = self._client.scroll(
+            self.alias,
+            scroll_filter=self._doc_filter(document_id),
+            limit=1,
+            with_payload=["chunk_count"],
+            with_vectors=False,
+        )
+        if not points:
+            return False
+        return self.count_chunks(document_id) == (points[0].payload or {}).get("chunk_count")
 
     def delete_document(self, document_id: str) -> bool:
         if not self.document_exists(document_id):

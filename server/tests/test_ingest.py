@@ -1,10 +1,15 @@
 import re
 
+import pytest
 from fastapi.testclient import TestClient
 from qdrant_client import QdrantClient
 
+from app.config import Settings
+from app.rag import store as store_module
+from app.rag.chunking import Chunk
 from app.rag.ids import doc_id, point_id
-from app.rag.store import QdrantStore, collection_name
+from app.rag.ingest import IngestResult, ingest_document
+from app.rag.store import DocumentMeta, QdrantStore, collection_name
 
 DOC_A = "# Runbook A\n\nThe pod restarts in a CrashLoopBackOff loop. Check the container logs."
 
@@ -37,6 +42,104 @@ def test_alias_flips_to_new_model_collection():
     assert store.collection == second
     # The old collection stays for A/B comparisons; only the alias moves.
     assert client.collection_exists(first)
+
+
+def _store_with_upsert_spy(monkeypatch, fail_on_request: int | None = None, dimension: int = 4):
+    """A store on in-memory Qdrant that records the size of every upsert
+    request and can fail one of them."""
+    client = QdrantClient(":memory:")
+    store = QdrantStore(client, alias="kb_active")
+    store.ensure_collection("model-a", dimension)
+    requests: list[int] = []
+    real_upsert = client.upsert
+
+    def upsert(**kwargs):
+        requests.append(len(kwargs["points"]))
+        if len(requests) == fail_on_request:
+            raise RuntimeError("Qdrant rejected the request")
+        return real_upsert(**kwargs)
+
+    monkeypatch.setattr(client, "upsert", upsert)
+    return store, requests
+
+
+def _five_chunks() -> tuple[DocumentMeta, list[Chunk], list[list[float]]]:
+    meta = DocumentMeta(
+        doc_id="doc-a",
+        title="Runbook A",
+        author="Jane Doe",
+        doc_date="2026-08-21",
+        embedding_model="model-a",
+        ingested_at="2026-08-21T00:00:00+00:00",
+    )
+    chunks = [Chunk(text=f"chunk {i}", section_path=("Runbook A",), index=i) for i in range(5)]
+    vectors = [[1.0, 0.0, 0.0, float(i)] for i in range(5)]
+    return meta, chunks, vectors
+
+
+def test_upsert_is_split_into_batches_and_stores_every_chunk(monkeypatch):
+    monkeypatch.setattr(store_module, "UPSERT_BATCH_SIZE", 2)
+    store, requests = _store_with_upsert_spy(monkeypatch)
+
+    store.upsert_chunks(*_five_chunks())
+
+    assert requests == [2, 2, 1]
+    assert store.count_chunks("doc-a") == 5
+
+
+def test_failed_batch_leaves_no_half_written_document(monkeypatch):
+    monkeypatch.setattr(store_module, "UPSERT_BATCH_SIZE", 2)
+    store, requests = _store_with_upsert_spy(monkeypatch, fail_on_request=2)
+
+    with pytest.raises(RuntimeError):
+        store.upsert_chunks(*_five_chunks())
+
+    # The first batch was written before the failure; a retry must not see the
+    # document as already ingested.
+    assert requests == [2, 2]
+    assert not store.document_exists("doc-a")
+
+
+RUNBOOK_IN_FIVE_SECTIONS = "# Runbook B\n\n" + "\n\n".join(
+    f"## Step {i}\n\nRestart pod number {i} and check its logs." for i in range(5)
+)
+
+
+def test_reingest_completes_a_document_whose_cleanup_also_failed(monkeypatch, fake_embedder):
+    monkeypatch.setattr(store_module, "UPSERT_BATCH_SIZE", 2)
+    store, _ = _store_with_upsert_spy(
+        monkeypatch, fail_on_request=2, dimension=fake_embedder.dimension
+    )
+    document_id = doc_id(RUNBOOK_IN_FIVE_SECTIONS)
+
+    def ingest() -> IngestResult:
+        return ingest_document(
+            doc_date="2026-08-21",
+            author="Jane Doe",
+            content=RUNBOOK_IN_FIVE_SECTIONS,
+            store=store,
+            embedder=fake_embedder,
+            settings=Settings(_env_file=None),
+        )
+
+    def unreachable(*args, **kwargs):
+        raise ConnectionError("Qdrant is unreachable")
+
+    # Qdrant goes away mid-ingest, so the cleanup's delete fails too and the
+    # first batch stays behind.
+    with monkeypatch.context() as down:
+        down.setattr(QdrantClient, "delete", unreachable)
+        with pytest.raises(ConnectionError):
+            ingest()
+    assert store.count_chunks(document_id) == 2
+
+    # The next upload must finish the document, not report it as already
+    # ingested with a truncated chunk_count.
+    retried = ingest()
+    assert retried.already_exists is False
+    assert retried.chunk_count == 5
+    assert store.count_chunks(document_id) == 5
+    assert ingest().already_exists is True
 
 
 def test_ingest_creates_document_and_lists_it(client: TestClient):

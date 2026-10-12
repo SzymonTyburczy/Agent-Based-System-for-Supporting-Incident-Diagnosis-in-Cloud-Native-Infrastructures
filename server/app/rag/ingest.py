@@ -31,13 +31,15 @@ def ingest_document(
     document_id = compute_doc_id(content)
     title = extract_title(content) or f"Document {document_id[:8]}"
 
-    if store.document_exists(document_id):
+    if store.document_complete(document_id):
         return IngestResult(
             doc_id=document_id,
             title=title,
             chunk_count=store.count_chunks(document_id),
             already_exists=True,
         )
+    # Chunks left behind by a failed ingest must not mix with this one's.
+    store.delete_document(document_id)
 
     chunks = build_chunks(
         content,
