@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from agent_core.reports_store import ReportRecord, ReportsStore
+
+CITATION = {
+    "key": "KB1",
+    "doc_id": "doc-1",
+    "file_name": "pod-restarts.md",
+    "title": "Pod restart runbook",
+    "section_path": ["Pods", "Diagnosis"],
+    "chunk_index": 0,
+    "quote": "Check the previous container logs.",
+}
 
 
 def _record(**overrides) -> ReportRecord:
@@ -101,3 +113,61 @@ def test_update_status_rejects_invalid_status(store: ReportsStore):
     store.insert(_record())
     with pytest.raises(ValueError):
         store.update_status("rep-1", "archived")
+
+
+def test_citations_round_trip_and_default_to_empty(store: ReportsStore):
+    store.insert(_record(id="rep-cited", citations=[CITATION]))
+    store.insert(_record(id="rep-plain"))
+
+    assert store.get("rep-cited").citations == [CITATION]
+    assert store.get("rep-cited").to_dict()["citations"] == [CITATION]
+    assert store.get("rep-plain").citations == []
+
+
+# The schema before the citations column existed.
+_OLD_SCHEMA_SQL = """
+CREATE TABLE reports (
+    id TEXT PRIMARY KEY,
+    generated_at TEXT NOT NULL,
+    title TEXT NOT NULL,
+    service TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    status TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    problem TEXT NOT NULL,
+    error_sources TEXT NOT NULL,
+    remediations TEXT NOT NULL,
+    raw_diagnosis TEXT NOT NULL,
+    content_md TEXT NOT NULL
+)
+"""
+
+
+def test_opening_an_old_database_adds_the_citations_column(tmp_path):
+    db_path = tmp_path / "reports.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(_OLD_SCHEMA_SQL)
+    conn.execute(
+        "INSERT INTO reports VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "rep-old", "2026-07-18T10:00:00Z", "Old report", "checkout", "critical",
+            "resolved", "Old summary.", "Old problem.", '["logs"]', '["restart"]',
+            "raw", "# Old report",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    store = ReportsStore(db_path)
+    try:
+        old = store.get("rep-old")
+        assert old.citations == []
+        assert (old.title, old.status, old.error_sources) == ("Old report", "resolved", ["logs"])
+
+        store.insert(_record(id="rep-new", citations=[CITATION]))
+        assert store.get("rep-new").citations == [CITATION]
+    finally:
+        store.close()
+
+    # Opening the migrated database again must not try to add the column twice.
+    ReportsStore(db_path).close()

@@ -21,6 +21,13 @@ def test_build_system_prompt_includes_given_time():
     assert "never infer the current time" in prompt
 
 
+def test_build_system_prompt_asks_for_cite_keys_not_document_ids():
+    prompt = build_system_prompt(now=datetime(2026, 7, 18, tzinfo=timezone.utc))
+
+    assert "[KB1]" in prompt
+    assert "doc_id" not in prompt
+
+
 def test_build_system_prompt_defaults_to_real_current_time():
     before = datetime.now(timezone.utc)
     prompt = build_system_prompt()

@@ -38,6 +38,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from agent_core.agent.loop import AgentConfig, AgentLoop
+from agent_core.citations import citation_scope
 from agent_core.config import Settings, build_provider
 from agent_core.incident import (
     IncidentMeta,
@@ -152,7 +153,10 @@ async def _worker() -> None:
                 ),
             )
             started = time.monotonic()
-            result_state = await loop.run(queued.description)
+            # The scope only has to cover the tool calls; the ledger it
+            # yields outlives it and is handed to generate_report below.
+            with citation_scope() as ledger:
+                result_state = await loop.run(queued.description)
             logger.info(
                 "Investigation finished in %.1fs (%d messages).",
                 time.monotonic() - started,
@@ -166,7 +170,7 @@ async def _worker() -> None:
             final_message = result_state.messages[-1]
             if final_message.content:
                 logger.info("Diagnosis:\n%s", final_message.content)
-                report = await generate_report(state.provider, final_message.content)
+                report = await generate_report(state.provider, final_message.content, ledger)
                 path = save_report(report, state.settings.report_output_dir)
                 logger.info("Saved incident report to %s", path)
 
@@ -182,6 +186,7 @@ async def _worker() -> None:
                     remediations=report.remediations,
                     raw_diagnosis=report.raw_diagnosis,
                     content_md=render_report_markdown(report),
+                    citations=report.citations,
                 )
                 state.reports_store.insert(record)
                 logger.info("Recorded report %s in reports store.", record.id)

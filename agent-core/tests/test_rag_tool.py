@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from agent_core.agent.loop import AgentConfig, AgentLoop
+from agent_core.citations import citation_scope
 from agent_core.config import Settings
 from agent_core.llm.base import LLMResponse, Role, ToolCall
 from agent_core.tools.rag import SearchKnowledgeBaseTool
@@ -13,12 +14,19 @@ from agent_core.tools.registry import ToolRegistry
 
 
 HIT = {
-    "text": "Check the previous container logs for CrashLoopBackOff.",
+    "text": "Pods > Diagnosis\n\nCheck the previous container logs for CrashLoopBackOff.",
     "score": 0.83, "doc_id": "runbook-1", "title": "Pod restart runbook",
     "section_path": ["Pods", "Diagnosis"], "author": "SRE",
-    "doc_date": "2026-10-03", "chunk_index": 0,
+    "doc_date": "2026-10-03", "chunk_index": 0, "file_name": "pod-restarts.md",
 }
 PAYLOAD = {"results": [HIT], "embedding_model": "test-model", "collection": "kb_test"}
+# What the LLM sees for HIT: a cite key instead of doc_id/chunk_index, and
+# no embedding model or collection name.
+LLM_HIT = {
+    "cite": "[KB1]", "file": "pod-restarts.md", "title": "Pod restart runbook",
+    "section": "Pods > Diagnosis", "author": "SRE", "doc_date": "2026-10-03",
+    "score": 0.83, "text": HIT["text"], "truncated": False,
+}
 
 
 @pytest.fixture
@@ -47,7 +55,9 @@ async def test_search_contract_and_auth(mock_http):
         "http://rag:8080/", token="private-token", top_k=3,
     ).execute(" pod restarts ")
     assert result.success
-    assert result.data["results"][0] == {**HIT, "truncated": False}
+    assert result.data["results"] == [LLM_HIT]
+    assert "[KB1]" in result.data["how_to_cite"]
+    assert set(result.data) == {"how_to_cite", "results"}
 
 
 async def test_empty_results_are_success_and_no_token_is_sent(mock_http):
@@ -110,7 +120,48 @@ async def test_limits_context_but_preserves_source(mock_http):
     assert len(result.data["results"]) == 2
     assert len(result.data["results"][0]["text"]) == 4000
     assert result.data["results"][0]["truncated"]
-    assert result.data["results"][0]["doc_id"] == HIT["doc_id"]
+    assert result.data["results"][0]["cite"] == "[KB1]"
+
+
+async def test_hits_are_registered_in_the_current_ledger(mock_http):
+    other = {**HIT, "doc_id": "runbook-2", "chunk_index": 3, "file_name": "dns.md"}
+    mock_http(lambda request: httpx.Response(200, json={**PAYLOAD, "results": [HIT, other]}))
+    tool = SearchKnowledgeBaseTool("http://rag")
+
+    with citation_scope() as ledger:
+        first = await tool.execute("pod restart")
+        # A passage found again keeps its key, so earlier citations stay valid.
+        second = await tool.execute("pod restart again")
+
+    assert [hit["cite"] for hit in first.data["results"]] == ["[KB1]", "[KB2]"]
+    assert [hit["cite"] for hit in second.data["results"]] == ["[KB1]", "[KB2]"]
+    assert len(ledger) == 2
+    ref = ledger.get("KB2")
+    assert (ref.doc_id, ref.chunk_index, ref.file_name) == ("runbook-2", 3, "dns.md")
+    # The ledger keeps the passage without the server's breadcrumb prefix.
+    assert ledger.get("KB1").text == "Check the previous container logs for CrashLoopBackOff."
+
+
+async def test_keys_restart_outside_a_citation_scope(mock_http):
+    mock_http(lambda request: httpx.Response(200, json=PAYLOAD))
+    tool = SearchKnowledgeBaseTool("http://rag")
+
+    first = await tool.execute("pod restart")
+    second = await tool.execute("pod restart")
+
+    assert first.data["results"][0]["cite"] == second.data["results"][0]["cite"] == "[KB1]"
+
+
+async def test_missing_file_name_falls_back_to_title(mock_http):
+    legacy_hit = {key: value for key, value in HIT.items() if key != "file_name"}
+    mock_http(lambda request: httpx.Response(200, json={**PAYLOAD, "results": [legacy_hit]}))
+
+    with citation_scope() as ledger:
+        result = await SearchKnowledgeBaseTool("http://rag").execute("pod restart")
+
+    assert result.success
+    assert result.data["results"][0]["file"] == "Pod restart runbook"
+    assert ledger.get("KB1").file_name is None
 
 
 @pytest.mark.parametrize("entrypoint", ["main", "webhook_server"])
@@ -149,7 +200,9 @@ async def test_retrieval_result_or_failure_reaches_next_llm_turn(mock_http, stat
     ).run("Diagnose restarting pod")
     tool_messages = [message for message in seen[1] if message.role == Role.TOOL]
     if status == 200:
-        assert json.loads(tool_messages[0].content)["results"][0]["doc_id"] == "runbook-1"
+        tool_output = json.loads(tool_messages[0].content)
+        assert tool_output["results"][0]["cite"] == "[KB1]"
+        assert "runbook-1" not in tool_messages[0].content
     else:
         assert "ERROR:" in tool_messages[0].content
         assert "503" in tool_messages[0].content

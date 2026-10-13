@@ -21,6 +21,7 @@ import logging
 import time
 
 from agent_core.agent.loop import AgentConfig, AgentLoop
+from agent_core.citations import citation_scope
 from agent_core.config import Settings, build_provider
 from agent_core.incident import (
     alerts_signature,
@@ -131,7 +132,10 @@ async def investigate(
     )
 
     started = time.monotonic()
-    state = await loop.run(incident_description)
+    # The scope only has to cover the tool calls; the ledger it yields
+    # outlives it and is handed to generate_report below.
+    with citation_scope() as ledger:
+        state = await loop.run(incident_description)
     logger.info(
         "Investigation finished in %.1fs (%d messages in the transcript).",
         time.monotonic() - started,
@@ -140,7 +144,7 @@ async def investigate(
 
     final_message = state.messages[-1]
     if final_message.content:
-        report = await generate_report(provider, final_message.content)
+        report = await generate_report(provider, final_message.content, ledger)
         path = save_report(report, report_output_dir)
         logger.info("Saved incident report to %s", path)
 

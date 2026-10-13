@@ -15,7 +15,7 @@ from pydantic import BaseModel
 class ReportSummary(BaseModel):
     """List-view shape — deliberately excludes the heavier narrative
     fields (problem, error_sources, remediations, raw_diagnosis,
-    content_md), which only the detail view needs.
+    content_md, citations), which only the detail view needs.
     """
 
     id: str
@@ -27,6 +27,22 @@ class ReportSummary(BaseModel):
     summary: str
 
 
+class Citation(BaseModel):
+    """One documentation source the report relies on (see
+    citations.resolve_report_citations). `key` is the [KBn] marker used in
+    the report's text; it, `chunk_index` and `quote` are null for a
+    document the report names as a whole rather than citing a passage of.
+    """
+
+    key: str | None
+    doc_id: str
+    file_name: str
+    title: str
+    section_path: list[str]
+    chunk_index: int | None
+    quote: str | None
+
+
 class ReportDetail(ReportSummary):
     """Full record, for the issue detail page."""
 
@@ -35,6 +51,7 @@ class ReportDetail(ReportSummary):
     remediations: list[str]
     raw_diagnosis: str
     content_md: str
+    citations: list[Citation] = []
 
 
 class StatusUpdate(BaseModel):

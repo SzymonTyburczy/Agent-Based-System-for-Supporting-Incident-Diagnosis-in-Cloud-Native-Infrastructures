@@ -2,17 +2,53 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
-from agent_core.llm.base import LLMProvider, LLMResponse
+from agent_core.citations import SourceLedger
+from agent_core.llm.base import LLMProvider, LLMResponse, Message, Role
 from agent_core.report import (
+    REPORT_SYSTEM_PROMPT,
     IncidentReport,
     generate_report,
     parse_report_json,
     render_report_markdown,
     save_report,
 )
+
+
+KEYED_CITATION = {
+    "key": "KB1",
+    "doc_id": "doc-1",
+    "file_name": "pod-restarts.md",
+    "title": "Pod restart runbook",
+    "section_path": ["Pods", "Diagnosis"],
+    "chunk_index": 0,
+    "quote": "Check the previous container logs.",
+}
+WHOLE_DOCUMENT_CITATION = {
+    "key": None,
+    "doc_id": "doc-2",
+    "file_name": "dns.md",
+    "title": "DNS troubleshooting",
+    "section_path": [],
+    "chunk_index": None,
+    "quote": None,
+}
+
+
+def _ledger() -> SourceLedger:
+    ledger = SourceLedger()
+    ledger.register(SimpleNamespace(
+        doc_id="doc-1", chunk_index=0, file_name="pod-restarts.md", title="Pod restart runbook",
+        section_path=["Pods", "Diagnosis"], text="Pods > Diagnosis\n\nCheck logs.",
+    ))
+    ledger.register(SimpleNamespace(
+        doc_id="doc-2", chunk_index=0, file_name=None, title="DNS troubleshooting",
+        section_path=[], text="Flush caches.",
+    ))
+    return ledger
 
 
 class FakeProvider(LLMProvider):
@@ -142,7 +178,20 @@ def test_save_report_writes_expected_json_structure(tmp_path):
     assert saved["problem"] == "Payment timeouts."
     assert saved["remediations"] == ["Scale payment service."]
     assert saved["raw_diagnosis"] == "full free-text diagnosis"
+    assert saved["citations"] == []
     assert saved["generated_at"] == "2026-07-18T14:30:00Z"
+
+
+def test_save_report_includes_citations(tmp_path):
+    report = IncidentReport(
+        title="X", error_sources=[], problem="Y [KB1]", remediations=[], raw_diagnosis="Y [KB1]",
+        citations=[KEYED_CITATION],
+    )
+
+    path = save_report(report, tmp_path)
+
+    assert json.loads(path.read_text(encoding="utf-8"))["citations"] == [KEYED_CITATION]
+    assert report.to_dict()["citations"] == [KEYED_CITATION]
 
 
 def test_save_report_creates_missing_directories(tmp_path):
@@ -199,6 +248,27 @@ def test_render_report_markdown_omits_empty_list_sections():
 
     assert "## Error sources" not in markdown
     assert "## Suggested remediations" not in markdown
+    assert "## Documentation sources" not in markdown
+
+
+def test_render_report_markdown_lists_documentation_sources():
+    report = IncidentReport(
+        title="X",
+        summary="Y",
+        error_sources=[],
+        problem="Z [KB1]",
+        remediations=[],
+        raw_diagnosis="raw",
+        citations=[KEYED_CITATION, WHOLE_DOCUMENT_CITATION],
+    )
+
+    markdown = render_report_markdown(report)
+
+    assert markdown.endswith(
+        "## Documentation sources\n\n"
+        "- [KB1] pod-restarts.md — Pods > Diagnosis\n"
+        "- dns.md\n"
+    )
 
 
 # --- generate_report (async, needs a provider) --------------------------
@@ -224,3 +294,59 @@ async def test_generate_report_falls_back_when_provider_call_fails():
 
     assert report.problem == "original diagnosis text"
     assert report.title == "Untitled incident report"
+
+
+@pytest.mark.asyncio
+async def test_generate_report_lists_source_keys_and_resolves_citations():
+    raw = json.dumps({"title": "X [KB1]", "problem": "Pods restart [kb1] [KB7].", "remediations": []})
+    provider = FakeProvider(response=LLMResponse(content=raw, tool_calls=[]))
+
+    report = await generate_report(provider, "Pods restart [KB1].", _ledger())
+
+    system, keys, user = provider.calls[0]
+    # Document names and headings are untrusted data: never in the system role.
+    assert system == Message(role=Role.SYSTEM, content=REPORT_SYSTEM_PROMPT)
+    assert keys.role == Role.USER
+    assert keys.content.endswith(
+        "KB1 = pod-restarts.md (Pods > Diagnosis); KB2 = DNS troubleshooting."
+    )
+    assert keys.content.startswith("Reference only")
+    assert user == Message(role=Role.USER, content="Pods restart [KB1].")
+    assert report.title == "X"
+    assert report.problem == "Pods restart [KB1]."
+    assert report.raw_diagnosis == "Pods restart [KB1]."
+    assert [c["key"] for c in report.citations] == ["KB1"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ledger", [None, SourceLedger()])
+async def test_generate_report_without_sources_lists_no_keys(ledger):
+    raw = json.dumps({"title": "X", "problem": "Y [KB1]."})
+    provider = FakeProvider(response=LLMResponse(content=raw, tool_calls=[]))
+
+    report = await generate_report(provider, "diagnosis", ledger)
+
+    assert [m.content for m in provider.calls[0]] == [REPORT_SYSTEM_PROMPT, "diagnosis"]
+    assert report.citations == []
+    # Only a given ledger resolves (and so drops) markers.
+    assert report.problem == ("Y [KB1]." if ledger is None else "Y.")
+
+
+@pytest.mark.asyncio
+async def test_generate_report_caps_document_labels_in_the_key_list():
+    ledger = SourceLedger()
+    ledger.register(SimpleNamespace(
+        doc_id="doc-1", chunk_index=0, file_name="f" * 300 + ".md", title="T",
+        section_path=["S" * 300], text="Check logs.",
+    ))
+    provider = FakeProvider(response=LLMResponse(content="{}", tool_calls=[]))
+
+    await generate_report(provider, "diagnosis", ledger)
+
+    keys = provider.calls[0][1].content
+    assert keys.endswith(f"KB1 = {'f' * 120} ({'S' * 120}).")
+
+
+def test_report_prompt_asks_for_markers_but_not_ids():
+    assert "[KB1]" in REPORT_SYSTEM_PROMPT
+    assert "doc_id" not in REPORT_SYSTEM_PROMPT

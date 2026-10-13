@@ -78,9 +78,10 @@ An empty `RAG_API_URL` disables retrieval; the code default is empty.
 
 Both webhook and polling modes expose the read-only `search_knowledge_base` tool
 to the LLM. The prompt asks it to search relevant runbooks before concluding,
-verify them against telemetry and cite title, document ID and section path.
-Tool invocation and citation remain model-driven, not a guaranteed search on every
-incident. Retrieved text is reference data, not instructions for the agent.
+verify them against telemetry and cite the passages it relies on (see
+[Documentation citations](#documentation-citations)). Tool invocation and citation
+remain model-driven, not a guaranteed search on every incident. Retrieved text is
+reference data, not instructions for the agent.
 
 `RAG_TOP_K` controls the number of excerpts (default 5, range 1–20).
 Each excerpt is limited to 4000 characters and marked when truncated.
@@ -88,6 +89,37 @@ Each excerpt is limited to 4000 characters and marked when truncated.
 There is no RAG startup dependency: timeout, authentication or server errors become
 tool errors, allowing diagnosis to continue. No matches produce an empty result.
 Ingest documents through the panel before testing retrieval.
+
+### Documentation citations
+
+The LLM never sees or copies document IDs. Each search hit is shown with a short
+key that is valid for one investigation, `[KB1]`, `[KB2]` and so on, along with its
+file name, title and section. The same passage keeps its key when a later search finds
+it again. The agent puts the key right after each statement that relies on the hit,
+and the structuring step copies it into whichever report field that statement lands
+in.
+
+After the run, `agent_core/citations.py` maps the keys back to knowledge-base data:
+
+- Marker variants such as `[kb1]`, `(KB1)` or `[KB1, KB3]` are rewritten as `[KB1]` /
+  `[KB1][KB3]` in `problem`, `error_sources` and `remediations`. Keys the agent was
+  never given are removed, so the panel cannot link to a wrong document. Markers are
+  removed from `title` and `summary`. `raw_diagnosis` is kept verbatim, and so is
+  `problem` when structuring failed and it repeats the raw diagnosis.
+- The report's `citations` list has one entry per key used, in order of first
+  mention: `key`, `doc_id`, `file_name` (the title for documents ingested without
+  one), `title`, `section_path`, `chunk_index` and `quote`, which is the cited chunk
+  text without the section prefix, so the panel can highlight it in the document.
+- A retrieved document that the report names by file name (case-insensitive, at least
+  4 characters; without the extension only when the rest reads as an identifier, such
+  as `crashloop-runbook`, so `kubernetes.md` is not named by the word "Kubernetes") or
+  exact title (at least two words and 8 characters) without citing any of its passages
+  is listed once, with `key`, `chunk_index` and `quote` set to `null`. Retrieved
+  documents the report does not use are not listed.
+
+`citations` is part of the saved JSON report, the stored record, `GET /reports/{id}`
+and both SSE events. The report list leaves it out. The Markdown export ends with a
+`Documentation sources` section.
 
 ## Execution modes
 
@@ -108,12 +140,17 @@ for a single investigation. Running both modes may duplicate diagnoses.
 | POST | `/alerts/webhook` | Accept Alertmanager payloads; returns `queued` or `ignored`; 503 while 100 investigations are already waiting |
 | GET | `/healthz` | HTTP availability check, not a complete dependency check |
 | GET | `/reports` | List reports; optional `status=pending` or `status=resolved` filter |
-| GET | `/reports/{id}` | Read a report, including Markdown content |
+| GET | `/reports/{id}` | Read a report, including Markdown content and documentation citations |
 | PATCH | `/reports/{id}` | Set status with `{"status":"resolved"}` or `{"status":"pending"}` |
 | GET | `/reports/stream` | SSE feed of `report_created` and `report_updated` events |
 
 Use one worker and one replica: the queue and SSE broadcaster are in process memory.
 Pending investigations do not survive a restart. Mount persistent storage for reports.
+An existing reports database gains the `citations` column on startup; older reports
+have no citations. The change is one-way: a previous version cannot read the upgraded
+database. Back up the database before upgrading, and to roll back restore that backup
+or drop the column first (`ALTER TABLE reports DROP COLUMN citations`, SQLite 3.35 or
+later).
 
 ## Tests and development
 
