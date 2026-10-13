@@ -20,11 +20,13 @@ example-infrastructure  →  agent-core  →  client
 `doc-converter` needs neither the cluster nor the agent. Start it before the client
 when you want to prepare a PDF in the Documentation view. Markdown and text files
 work without it. `server/` (the RAG knowledge base) needs Docker for Qdrant and Ollama
-for embeddings; start it before the client if you want the Documentation view's
-**Send** to work. Set the agent's `RAG_API_URL=http://localhost:8100` to enable
+for embeddings. Start it before the client if you want the Documentation view's
+**Send**, the Knowledge base view, and the documents a report cites to work. Set the
+agent's `RAG_API_URL=http://localhost:8100` to enable
 `search_knowledge_base` in webhook and polling modes. Retrieved documents enter
-the LLM context when it calls the tool; an unavailable RAG service does not prevent
-startup or diagnosis using telemetry. An empty URL disables the tool.
+the LLM context when it calls the tool, and the passages the diagnosis cites are
+listed in the report. An unavailable RAG service does not prevent startup or
+diagnosis using telemetry. An empty URL disables the tool.
 
 Alerts flow **infra → agent-core** (via webhook or MCP), and reports flow
 **agent-core → client** (via REST + SSE). Start them in that order — each
@@ -153,7 +155,8 @@ allow `http://localhost:5173`.
 
 Open the printed URL (usually `http://localhost:5173`) and go to
 `/issues` — it should load without a connection error (an empty list is
-fine if no incidents have fired yet).
+fine if no incidents have fired yet). With step 4 running, `/knowledge-base` lists
+the documents sent so far.
 
 ## Environment variables
 
@@ -216,7 +219,7 @@ All optional; the defaults match step 4.
 | `VITE_AGENT_API_TOKEN` | only needed if `CLIENT_API_TOKEN` is set on the agent-core side |
 | `VITE_CONVERTER_URL` | base URL of the `doc-converter` service: `/api/converter` (proxied to `localhost:5001`) or an absolute URL such as `http://localhost:5001` |
 | `VITE_CONVERTER_TOKEN` | only needed if `API_TOKEN` is set on the doc-converter side |
-| `VITE_RAG_API_URL` | base URL of the RAG knowledge base: `/api/rag` (proxied to `localhost:8100`) or an absolute URL such as `http://localhost:8100`; the Documentation view's **Send** target |
+| `VITE_RAG_API_URL` | base URL of the RAG knowledge base: `/api/rag` (proxied to `localhost:8100`) or an absolute URL such as `http://localhost:8100`; used by the Documentation view's **Send**, the Knowledge base view, and the document panel opened from a report's citations |
 | `VITE_RAG_API_TOKEN` | only needed if `IDAR_API_TOKEN` is set on the RAG server |
 
 Never commit real values from any `.env`. Frontend `VITE_*` values are public
@@ -225,6 +228,7 @@ in the browser bundle; keep this development setup private.
 ## Testing
 
 See [TESTING.md](TESTING.md) for manual webhook tests, expected results, persistence
-and SSE checks, automated tests, and troubleshooting in PowerShell and Bash.
+and SSE checks, knowledge-base and citation checks, automated tests, and
+troubleshooting in PowerShell and Bash.
 Live diagnosis requires MCP, a monitored cluster, and an LLM provider; unit tests
 use mocks and do not require those services.

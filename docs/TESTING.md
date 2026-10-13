@@ -260,8 +260,9 @@ result using the Edit tab. Confirm the converter status is online. Markdown/text
 uploads should work even without the converter. **Send** posts the document to the RAG
 knowledge base: with the RAG API running (step 8) the confirmation names the document
 and its fragment count, pressing Send twice reports it as already indexed, and with the
-API stopped the draft stays on screen with the connection error. Step 8 exercises the
-same endpoint directly.
+API stopped the draft stays on screen with the connection error. The payload carries
+the uploaded file's name as `nazwa_pliku`, so the document is listed under that name
+in the Knowledge base view (step 11). Step 8 exercises the same endpoint directly.
 
 The initial host-process start may download model weights; the Docker image already
 contains the default models. An image-only PDF can return 422 with OCR disabled;
@@ -272,8 +273,9 @@ Check headings and tables as well as the HTTP status.
 
 Start the RAG API as described in [RUNNING.md](RUNNING.md#4-start-the-rag-knowledge-base)
 or [CONTAINERS.md](CONTAINERS.md#rag-knowledge-base-server). The payload is the same
-`{data, autor, tresc}` shape the panel sends from the Documentation view, so this is
-the API-level version of step 7's **Send**. Windows PowerShell 5.1 does not send
+`{data, autor, tresc}` shape the panel sends from the Documentation view, plus its
+optional `nazwa_pliku`, so this is the API-level version of step 7's **Send**. The
+`GET` calls are what the Knowledge base view uses. Windows PowerShell 5.1 does not send
 string bodies as UTF-8, so keep non-ASCII text (such as Polish diacritics) out of
 these commands there, or use PowerShell 7.
 
@@ -282,15 +284,20 @@ these commands there, or use PowerShell 7.
 ```powershell
 Invoke-RestMethod http://localhost:8100/api/health
 $doc = @{
-    data  = (Get-Date -Format yyyy-MM-dd)
-    autor = 'Manual test'
-    tresc = "# Runbook: CrashLoopBackOff`n`n## Diagnosis`n`nThe pod restarts in a loop. Check the logs of the previous container: kubectl logs <pod> --previous."
+    data        = (Get-Date -Format yyyy-MM-dd)
+    autor       = 'Manual test'
+    nazwa_pliku = 'runbooks/crashloop-runbook.md'
+    tresc       = "# Runbook: CrashLoopBackOff`n`n## Diagnosis`n`nThe pod restarts in a loop. Check the logs of the previous container: kubectl logs <pod> --previous."
 } | ConvertTo-Json
 $ingested = Invoke-RestMethod -Method Post -Uri http://localhost:8100/api/documents -ContentType 'application/json' -Body $doc
 $ingested
+$docId = $ingested.doc_id
 $query = @{ query = 'the pod keeps restarting, how do I find the cause?'; top_k = 3 } | ConvertTo-Json
-(Invoke-RestMethod -Method Post -Uri http://localhost:8100/api/search -ContentType 'application/json' -Body $query).results | Select-Object score, title, section_path
-Invoke-RestMethod -Method Delete -Uri "http://localhost:8100/api/documents/$($ingested.doc_id)"
+(Invoke-RestMethod -Method Post -Uri http://localhost:8100/api/search -ContentType 'application/json' -Body $query).results | Select-Object score, file_name, title, section_path
+(Invoke-RestMethod http://localhost:8100/api/documents).documents | Select-Object doc_id, file_name, title, chunk_count
+Invoke-RestMethod "http://localhost:8100/api/documents/$docId" | Select-Object file_name, title, content_source, content | Format-List
+Invoke-RestMethod -Method Delete -Uri "http://localhost:8100/api/documents/$docId"
+curl.exe --silent --show-error --write-out ' %{http_code}' "http://localhost:8100/api/documents/$docId"
 ```
 
 **Bash**
@@ -298,13 +305,19 @@ Invoke-RestMethod -Method Delete -Uri "http://localhost:8100/api/documents/$($in
 ```bash
 curl --fail --silent --show-error http://localhost:8100/api/health | jq .
 doc=$(jq -n --arg data "$(date -u +%Y-%m-%d)" \
-  '{data: $data, autor: "Manual test", tresc: "# Runbook: CrashLoopBackOff\n\n## Diagnosis\n\nThe pod restarts in a loop. Check the logs of the previous container: kubectl logs <pod> --previous."}')
+  '{data: $data, autor: "Manual test", nazwa_pliku: "runbooks/crashloop-runbook.md", tresc: "# Runbook: CrashLoopBackOff\n\n## Diagnosis\n\nThe pod restarts in a loop. Check the logs of the previous container: kubectl logs <pod> --previous."}')
 ingested=$(curl --fail --silent --show-error -H 'Content-Type: application/json' --data-binary "$doc" http://localhost:8100/api/documents)
 echo "$ingested" | jq .
+doc_id=$(echo "$ingested" | jq -r .doc_id)
 curl --fail --silent --show-error -H 'Content-Type: application/json' \
   --data '{"query": "the pod keeps restarting, how do I find the cause?", "top_k": 3}' \
-  http://localhost:8100/api/search | jq '.results[] | {score, title, section_path}'
-curl --fail --silent --show-error -X DELETE "http://localhost:8100/api/documents/$(echo "$ingested" | jq -r .doc_id)"
+  http://localhost:8100/api/search | jq '.results[] | {score, file_name, title, section_path}'
+curl --fail --silent --show-error http://localhost:8100/api/documents |
+  jq '.documents[] | {doc_id, file_name, title, chunk_count}'
+curl --fail --silent --show-error "http://localhost:8100/api/documents/$doc_id" |
+  jq '{file_name, title, content_source, content}'
+curl --fail --silent --show-error -X DELETE "http://localhost:8100/api/documents/$doc_id"
+curl --silent --show-error --write-out ' %{http_code}\n' "http://localhost:8100/api/documents/$doc_id"
 ```
 
 Expected: health returns `status: ok` with the model name and vector dimension
@@ -315,8 +328,16 @@ with `already_exists: true`: document ids are derived from the content, so re-se
 never duplicates anything. The search lists the runbook first with `section_path`
 `["Runbook: CrashLoopBackOff", "Diagnosis"]`; the score is a cosine similarity
 (about 0.73 for this paraphrase on `0.6b`) and its absolute value differs
-between models, so compare rankings, not raw scores. DELETE returns `204` and
-`GET /api/documents` no longer lists the document. With `IDAR_API_TOKEN` set, pass
+between models, so compare rankings, not raw scores. Search results carry
+`file_name` but never the document's full `content`.
+
+The list (newest first, metadata only) and the single document both show
+`file_name: "crashloop-runbook.md"`: the server keeps only the bare name, so the path
+(a Windows one too) is dropped. Without `nazwa_pliku` the field is `null`, and over
+255 characters the POST returns `422`. The single document adds `content`, the
+Markdown exactly as sent, and `content_source: "stored"`. DELETE returns `204`, after
+which `GET /api/documents` no longer lists the document and its `GET` returns
+`{"detail":"Document '<doc_id>' not found."} 404`. With `IDAR_API_TOKEN` set, pass
 the Authorization header on the `/api/documents` and `/api/search` calls;
 `/api/health` stays open.
 
@@ -331,11 +352,140 @@ container with the new environment, or restart the Kubernetes Deployment.
 
 Submit an alert as in step 3 with symptoms matching the runbook. Startup logs should
 list `search_knowledge_base`; a retrieval call logs `tool=search_knowledge_base`.
-Check the diagnosis for a relevant document title/ID and section reference, alongside
-telemetry evidence. Retrieval is selected by the LLM, so a report alone does not
-prove it called the tool. No matches or unavailable RAG should allow diagnosis to
+The tool shows the model each hit under a short key (`[KB1]`, `[KB2]`, …) instead
+of document ids. The diagnosis should put that key after each statement that relies
+on the runbook, alongside telemetry evidence. Retrieval and citing are chosen by the
+LLM, so a report alone does not prove it called the tool, and a report without
+citations is not an error. No matches or unavailable RAG should allow diagnosis to
 continue with the missing documentation context noted. Clear `RAG_API_URL` to
 disable the tool entirely. These live checks use the configured LLM provider.
+
+After the report is saved, run step 3's listing in the same shell session. Then read
+the new report's citations:
+
+**PowerShell**
+
+```powershell
+$report = Invoke-RestMethod "http://localhost:8090/reports/$($newReports[0].id)"
+$report.problem
+$report.citations | Select-Object key, file_name, section_path, chunk_index
+```
+
+**Bash**
+
+```bash
+report_id=$(curl --fail --silent --show-error http://localhost:8090/reports |
+  jq -r --argjson before "$before_ids" \
+    '[.[] | select(.id as $id | $before | index($id) | not)][0].id')
+curl --fail --silent --show-error "http://localhost:8090/reports/$report_id" |
+  jq '{problem, citations: [.citations[] | {key, file_name, section_path, chunk_index}]}'
+```
+
+Expected: `citations` has one entry per cited passage, in order of first mention.
+Each entry has `key` (`KB1`, …), the runbook's `doc_id`, `file_name`
+(`crashloop-runbook.md` when it was sent with that name, otherwise its title),
+`title`, `section_path` (`["Runbook: CrashLoopBackOff", "Diagnosis"]`), `chunk_index`,
+and `quote`, which is the cited chunk text without the
+`Runbook: CrashLoopBackOff > Diagnosis` line. The same keys appear as `[KB1]` (several
+as `[KB1][KB2]`) in `problem`, `error_sources`, and `remediations`. Keys the agent was
+never given are removed, and `title` and `summary` have no markers. If the report
+names the runbook by file name or title without citing a passage, the runbook is
+listed with `key`, `chunk_index`, and `quote` set to `null`. `GET /reports` does not
+include citations. **Copy Markdown** ends with a `Documentation sources` section.
+Reports created before citations existed return `citations: []`.
+
+### 10. Open a cited passage in the panel
+
+Open the report from step 9 in [Issues](http://localhost:3000/issues). If its
+`citations` list was empty, the agent did not cite the runbook: submit another alert.
+
+- A **Documentation sources** card follows **Suggested remediations**. Each cited
+  passage is a chip with its number, file name, and section, such as
+  `[1] crashloop-runbook.md Runbook: CrashLoopBackOff > Diagnosis`. Hovering a chip
+  shows the start of the passage. A whole-document citation shows a file icon and the
+  file name only. A report without citations has no card.
+- In **Problem**, **Error sources**, **Suggested remediations**, and the raw
+  diagnosis, each `[KBn]` marker becomes a small numbered chip with the same number as
+  in the card. A marker naming a key the report does not list stays plain text.
+- Click a chip. The URL gains `?doc=<doc_id>&cite=KB1`, and the document opens in a
+  panel beside the report. In a window narrower than 1280 px, the panel appears under
+  the report, and the page scrolls down to it. The panel scrolls inside itself to the
+  highlighted passage; the report does not move. Scroll the panel away and click the
+  same chip again: it scrolls back. Clicking another chip switches the panel without
+  adding a history entry.
+- Press the browser's Back button, or the panel's close button: the panel closes and
+  `doc` leaves the URL. Reloading a URL that has `?doc=…&cite=…` opens the report with
+  the panel already at the passage. A whole-document chip opens the document at the
+  top, without `cite` in the URL.
+
+When the viewer cannot find the passage, it highlights the cited section's heading
+instead. If the heading is missing too, it opens at the top with "Couldn't find the
+cited passage — showing the whole document." Matching ignores whitespace, and the
+quote is the chunk text the document was indexed from, so this needs a quote that
+differs from the document's Markdown in more than whitespace. A reconstructed document
+(step 11) is rebuilt from those same chunks and always contains its cited passages.
+These fallbacks are hard to provoke with real data; the `DocumentViewer` component
+tests cover them.
+
+### 11. Browse the knowledge base in the panel
+
+Ingest a document or two (step 7's **Send**, or step 8 without its DELETE), then
+open [Knowledge base](http://localhost:3000/knowledge-base).
+
+- The list shows the documents, newest first. Each row shows the file name (or the
+  title, for a document sent without one), the title under it when different, and
+  then the author, date, and fragment count.
+- Type in the search box. The list keeps the documents whose file name or title
+  contains every word typed, ignoring case and diacritics (`lodz` finds `Łódź.md`).
+  The counter shows `N of M documents`, and a query that matches nothing says so.
+- Select a document. It opens beside the list (under it in a narrower window) with its
+  full Markdown, and the URL gains `?doc=<doc_id>`; Back closes it. Images in a
+  document are shown as an `[image: …]` placeholder and never loaded.
+- **Refresh** reloads the list. The panel caches documents for 30 seconds, and a
+  **Send** in Documentation updates the cache at once. A document ingested from a
+  terminal appears after **Refresh**, or when the view is opened again more than
+  30 seconds later.
+- **Delete** (the trash icon) asks for confirmation and then removes the row. If the
+  viewer showed that document, it closes. A chip in step 10's report that cites the
+  deleted document now opens a panel saying "This document is no longer in the
+  knowledge base." Sending the same Markdown again restores it under the same
+  `doc_id`, since ids are a hash of the content, and the citations work again.
+
+A document ingested before the server stored the full Markdown is shown rebuilt from
+its chunks. To see how the panel shows one, strip a test document back to that state
+in Qdrant. This edits Qdrant directly, so use it on a test document only. The
+compose file publishes Qdrant on `127.0.0.1:6333`, and the server's collection is
+behind the default `kb_active` alias. Run step 8 without its DELETE, then, in the same
+shell session:
+
+**PowerShell**
+
+```powershell
+$strip = @{
+    keys   = @('content', 'file_name')
+    filter = @{ must = @(@{ key = 'doc_id'; match = @{ value = $docId } }) }
+} | ConvertTo-Json -Depth 6
+Invoke-RestMethod -Method Post -Uri 'http://localhost:6333/collections/kb_active/points/payload/delete?wait=true' -ContentType 'application/json' -Body $strip
+Invoke-RestMethod "http://localhost:8100/api/documents/$docId" | Select-Object file_name, title, content_source, content | Format-List
+```
+
+**Bash**
+
+```bash
+curl --fail --silent --show-error -H 'Content-Type: application/json' \
+  --data "$(jq -n --arg id "$doc_id" '{keys: ["content", "file_name"], filter: {must: [{key: "doc_id", match: {value: $id}}]}}')" \
+  'http://localhost:6333/collections/kb_active/points/payload/delete?wait=true' | jq .
+curl --fail --silent --show-error "http://localhost:8100/api/documents/$doc_id" |
+  jq '{file_name, title, content_source, content}'
+```
+
+Expected: the document now has `content_source: "reconstructed"` and
+`file_name: null`. Its `content` is rebuilt from the chunks, so for step 8's runbook it
+starts at `## Diagnosis`: the heading-only H1 made no chunk. After a page reload, the
+Knowledge base row shows the title, and the viewer notes "Reconstructed from its
+indexed fragments …". Repeat step 8's POST: it returns `already_exists: true` and
+upgrades the document in place, so its `GET` shows `content_source: "stored"` with the
+file name again. Then run step 8's DELETE.
 
 ## Automated tests without live infrastructure
 
@@ -376,9 +526,12 @@ cd ..
 ```
 
 Dependency installation requires network access. Backend tests cover the agent loop,
-tool adapters, incident parsing, report generation, storage, and API behavior.
-Frontend tests cover API mapping and document conversion helpers; the build also
-checks TypeScript. These checks complement, rather than replace, the live flow above.
+tool adapters, incident parsing, report generation, citation resolution, storage, and
+API behavior. Frontend tests cover API mapping, document conversion, the
+knowledge-base requests and search, and the citation helpers (markers to chips,
+finding a cited passage). A few components are rendered to static markup to check
+the chips, highlights, and viewer notes. The build also checks TypeScript. These
+checks complement, rather than replace, the live flow above.
 
 The converter also has an independent test suite using an injected pipeline, without
 loading Docling models. After installing its development dependencies, run from the
@@ -428,4 +581,8 @@ Two `slow` tests (`uv run python -m pytest -q -m slow`) call the real
 | RAG API exits with `Embedding provider startup probe failed` after about a minute | Ollama is unreachable or the model is not pulled: `ollama pull qwen3-embedding:0.6b`; check `IDAR_OLLAMA_URL` (`host.docker.internal` from a container, `OLLAMA_HOST=0.0.0.0` on native Linux). |
 | RAG `/api/health` returns 503 | The JSON names the failing side: `qdrant` (container down or wrong `IDAR_QDRANT_URL`) or `embedding` (Ollama or model). `/healthz` stays 200 because it only checks the process. |
 | RAG search returns an empty `results` list | Nothing is ingested for the active collection; check `GET /api/documents`. Changing `IDAR_EMBEDDING_MODEL` switches to a new, empty collection, so ingest the documents again. |
+| Knowledge base view shows "Couldn't reach the knowledge base." | Check the RAG API's `/api/health`, the panel's build-time `VITE_RAG_API_URL`, and `IDAR_CORS_ORIGINS` matching the panel origin. |
+| A report has no **Documentation sources** | The agent did not search or did not cite: look for `tool=search_knowledge_base` in the logs and `[KBn]` markers in the raw diagnosis. Only keys handed out in the same investigation resolve. Reports created before citations existed have none. |
+| The document panel says "This document is no longer in the knowledge base." | The cited document was deleted, or `IDAR_EMBEDDING_MODEL` changed and switched to another collection. Sending the same Markdown again restores the same `doc_id`. |
+| The document panel says "Couldn't find the cited passage" | Neither the passage nor its section heading is in the document's text: the citation's `quote` differs from the document's Markdown in more than whitespace. A reconstructed document is not the cause, since it is rebuilt from the same chunks the quotes come from. Compare the `quote` in `GET /reports/{id}` with the document's `content`; the citation still opens the right document. |
 | `Failed to spawn: pytest` (os error 4551) on Windows | Smart App Control blocks uv's script launchers; use `uv run python -m pytest` and `python -m uvicorn` (see `server/README.md`). |
