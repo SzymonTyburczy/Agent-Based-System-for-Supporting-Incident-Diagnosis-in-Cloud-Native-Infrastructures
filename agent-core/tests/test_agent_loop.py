@@ -109,6 +109,7 @@ async def test_agent_loop_asks_for_wrapup_summary_when_iterations_exhausted():
     assert len(provider.calls) == 4  # 3 tool-call turns + 1 wrap-up call
     assert not provider.tools_per_call[-1]  # wrap-up call must offer no tools
     assert "reached the tool-call budget" in state.messages[-2].content
+    assert "[KBn] source markers" in state.messages[-2].content
 
 
 @pytest.mark.asyncio

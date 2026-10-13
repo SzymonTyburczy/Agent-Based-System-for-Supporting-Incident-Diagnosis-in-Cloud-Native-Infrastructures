@@ -125,7 +125,8 @@ class AgentLoop:
             "Do not call any more tools. Based only on the information "
             "already gathered above, give your best-effort diagnosis: "
             "probable root cause and suggested next steps, and note "
-            "explicitly what remains uncertain or unverified."
+            "explicitly what remains uncertain or unverified. Keep any "
+            "[KBn] source markers next to the statements they support."
         )
         try:
             wrapup = await self.provider.complete(state.messages, tools=None)

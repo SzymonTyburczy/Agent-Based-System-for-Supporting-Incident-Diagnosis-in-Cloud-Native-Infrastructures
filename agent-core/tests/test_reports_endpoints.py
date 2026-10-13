@@ -8,6 +8,16 @@ from agent_core.config import Settings
 from agent_core.report_events import ReportEventBroadcaster
 from agent_core.reports_store import ReportRecord, ReportsStore
 
+CITATION = {
+    "key": "KB1",
+    "doc_id": "doc-1",
+    "file_name": "pod-restarts.md",
+    "title": "Pod restart runbook",
+    "section_path": ["Pods", "Diagnosis"],
+    "chunk_index": 0,
+    "quote": "Check the previous container logs.",
+}
+
 
 def _record(**overrides) -> ReportRecord:
     base = dict(
@@ -72,6 +82,16 @@ def test_get_report_returns_full_detail(client):
     body = response.json()
     assert body["content_md"] == "# Checkout errors\n\nfull content"
     assert body["error_sources"] == ["checkout pod logs"]
+
+
+def test_get_report_includes_citations_but_list_does_not(client):
+    wh.state.reports_store.insert(_record(citations=[CITATION]))
+
+    detail = client.get("/reports/rep-1").json()
+    summaries = client.get("/reports").json()
+
+    assert detail["citations"] == [CITATION]
+    assert "citations" not in summaries[0]
 
 
 def test_get_report_404_for_unknown_id(client):

@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from agent_core.citations import SourceLedger, current_ledger
 from agent_core.tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
     from agent_core.config import Settings
     from agent_core.tools.registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
+
+HOW_TO_CITE = (
+    "Put a result's cite value, e.g. [KB1], right after each statement it "
+    "supports. Use only cite values you received."
+)
 
 
 class SearchResult(BaseModel):
@@ -24,6 +33,8 @@ class SearchResult(BaseModel):
     author: str
     doc_date: str
     chunk_index: int
+    # Absent from RAG servers that predate file names; the title stands in.
+    file_name: str | None = None
 
 
 class SearchResponse(BaseModel):
@@ -36,8 +47,8 @@ class SearchKnowledgeBaseTool(Tool):
     name = "search_knowledge_base"
     description = (
         "Search technical documentation and runbooks for the incident's symptoms, "
-        "services or error messages. Returns excerpts with document IDs and section "
-        "paths. Use them as reference material, then verify against live telemetry."
+        "services or error messages. Returns excerpts with a cite key, file name and "
+        "section. Use them as reference material, then verify against live telemetry."
     )
     parameters_schema = {
         "type": "object",
@@ -79,18 +90,34 @@ class SearchKnowledgeBaseTool(Tool):
         except (ValueError, ValidationError):
             return ToolResult(success=False, error="Knowledge-base API returned an invalid search response.")
 
+        # Outside a citation scope (tests, ad-hoc use) a throwaway ledger
+        # still gives the model keys to cite; they just resolve to nothing.
+        ledger = current_ledger()
+        if ledger is None:
+            ledger = SourceLedger()
+        logger.debug(
+            "Knowledge-base search used embedding_model=%s collection=%s",
+            payload.embedding_model, payload.collection,
+        )
         results = []
         for hit in payload.results[:self.top_k]:
-            item = hit.model_dump()
-            # Runbook code blocks can exceed the server's normal chunk budget.
-            item["text"] = hit.text[:4000]
-            item["truncated"] = len(hit.text) > 4000
-            results.append(item)
-        return ToolResult(success=True, data={
-            "results": results,
-            "embedding_model": payload.embedding_model,
-            "collection": payload.collection,
-        })
+            key = ledger.register(hit)
+            logger.debug("Search hit [%s] = doc_id=%s chunk_index=%d", key, hit.doc_id, hit.chunk_index)
+            # No doc_id or chunk_index here: the model cites the short key and
+            # the ledger maps it back, so it never has to copy an id.
+            results.append({
+                "cite": f"[{key}]",
+                "file": hit.file_name or hit.title,
+                "title": hit.title,
+                "section": " > ".join(hit.section_path),
+                "author": hit.author,
+                "doc_date": hit.doc_date,
+                "score": hit.score,
+                # Runbook code blocks can exceed the server's normal chunk budget.
+                "text": hit.text[:4000],
+                "truncated": len(hit.text) > 4000,
+            })
+        return ToolResult(success=True, data={"how_to_cite": HOW_TO_CITE, "results": results})
 
 
 def register_rag_tool(registry: ToolRegistry, settings: Settings) -> None:

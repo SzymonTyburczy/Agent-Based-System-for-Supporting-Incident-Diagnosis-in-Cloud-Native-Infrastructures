@@ -2,7 +2,7 @@ import re
 
 import pytest
 from fastapi.testclient import TestClient
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 
 from app.config import Settings
 from app.rag import store as store_module
@@ -10,13 +10,22 @@ from app.rag.chunking import Chunk
 from app.rag.ids import doc_id, point_id
 from app.rag.ingest import IngestResult, ingest_document
 from app.rag.store import DocumentMeta, QdrantStore, collection_name
+from app.schemas import DocumentIn
 
 DOC_A = "# Runbook A\n\nThe pod restarts in a CrashLoopBackOff loop. Check the container logs."
 
 
-def payload(content: str = DOC_A, author: str = "Jane Doe", date: str = "2026-08-21") -> dict:
-    # The team's frozen wire contract (app/schemas.py).
-    return {"data": date, "autor": author, "tresc": content}
+def payload(
+    content: str = DOC_A,
+    author: str = "Jane Doe",
+    date: str = "2026-08-21",
+    file_name: str | None = None,
+) -> dict:
+    # The team's frozen wire contract (app/schemas.py), plus the optional file name.
+    body = {"data": date, "autor": author, "tresc": content}
+    if file_name is not None:
+        body["nazwa_pliku"] = file_name
+    return body
 
 
 def test_doc_and_point_ids_are_deterministic():
@@ -67,6 +76,7 @@ def _five_chunks() -> tuple[DocumentMeta, list[Chunk], list[list[float]]]:
     meta = DocumentMeta(
         doc_id="doc-a",
         title="Runbook A",
+        file_name="runbook-a.md",
         author="Jane Doe",
         doc_date="2026-08-21",
         embedding_model="model-a",
@@ -81,7 +91,7 @@ def test_upsert_is_split_into_batches_and_stores_every_chunk(monkeypatch):
     monkeypatch.setattr(store_module, "UPSERT_BATCH_SIZE", 2)
     store, requests = _store_with_upsert_spy(monkeypatch)
 
-    store.upsert_chunks(*_five_chunks())
+    store.upsert_chunks(*_five_chunks(), content="# Runbook A")
 
     assert requests == [2, 2, 1]
     assert store.count_chunks("doc-a") == 5
@@ -92,11 +102,26 @@ def test_failed_batch_leaves_no_half_written_document(monkeypatch):
     store, requests = _store_with_upsert_spy(monkeypatch, fail_on_request=2)
 
     with pytest.raises(RuntimeError):
-        store.upsert_chunks(*_five_chunks())
+        store.upsert_chunks(*_five_chunks(), content="# Runbook A")
 
     # The first batch was written before the failure; a retry must not see the
     # document as already ingested.
     assert requests == [2, 2]
+    assert not store.document_exists("doc-a")
+
+
+def test_failed_content_write_leaves_no_document(monkeypatch):
+    store, _ = _store_with_upsert_spy(monkeypatch)
+
+    def set_payload(*args, **kwargs):
+        raise RuntimeError("Qdrant rejected the request")
+
+    monkeypatch.setattr(store._client, "set_payload", set_payload)
+    with pytest.raises(RuntimeError):
+        store.upsert_chunks(*_five_chunks(), content="# Runbook A")
+
+    # Every chunk was written, so without the rollback the document would pass
+    # as complete and never get its Markdown.
     assert not store.document_exists("doc-a")
 
 
@@ -159,6 +184,93 @@ def test_ingest_creates_document_and_lists_it(client: TestClient):
     assert document["author"] == "Jane Doe"
     assert document["doc_date"] == "2026-08-21"
     assert document["chunk_count"] == body["chunk_count"]
+    assert document["file_name"] is None
+    # The list stays light: the Markdown only comes with a single document.
+    assert "content" not in document
+
+
+def test_ingest_stores_file_name_and_full_markdown(client: TestClient):
+    created = client.post("/api/documents", json=payload(file_name="runbook-a.md")).json()
+
+    detail = client.get(f"/api/documents/{created['doc_id']}")
+
+    assert detail.status_code == 200
+    assert detail.json() == {
+        **client.get("/api/documents").json()["documents"][0],
+        "content": DOC_A,
+        "content_source": "stored",
+    }
+    assert detail.json()["file_name"] == "runbook-a.md"
+    assert detail.json()["title"] == "Runbook A"
+
+
+def test_get_unknown_document_is_404(client: TestClient):
+    response = client.get("/api/documents/0123456789abcdef")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Document '0123456789abcdef' not found."}
+
+
+def _make_legacy(client: TestClient, document_id: str) -> None:
+    """Strips what documents ingested before this change lack: the file name on
+    every chunk and the full Markdown on the first one."""
+    client.app.state.qdrant.delete_payload(
+        client.app.state.store.alias,
+        keys=["content", "file_name"],
+        points=models.FilterSelector(
+            filter=models.Filter(
+                must=[
+                    models.FieldCondition(key="doc_id", match=models.MatchValue(value=document_id))
+                ]
+            )
+        ),
+    )
+
+
+def test_legacy_document_is_reconstructed_from_its_chunks(client: TestClient):
+    created = client.post(
+        "/api/documents", json=payload(content=RUNBOOK_IN_FIVE_SECTIONS, file_name="b.md")
+    ).json()
+    assert created["chunk_count"] == 5
+    _make_legacy(client, created["doc_id"])
+
+    detail = client.get(f"/api/documents/{created['doc_id']}").json()
+
+    assert detail["content_source"] == "reconstructed"
+    assert detail["file_name"] is None
+    # In chunk order and without the "Runbook B > Step i" breadcrumbs; the H1
+    # had no text of its own, so no chunk kept it.
+    assert detail["content"] == RUNBOOK_IN_FIVE_SECTIONS.removeprefix("# Runbook B\n\n")
+
+
+def test_resending_a_legacy_document_backfills_file_name_and_content(client: TestClient):
+    created = client.post("/api/documents", json=payload(content=RUNBOOK_IN_FIVE_SECTIONS)).json()
+    _make_legacy(client, created["doc_id"])
+
+    resent = client.post(
+        "/api/documents", json=payload(content=RUNBOOK_IN_FIVE_SECTIONS, file_name="b.md")
+    )
+
+    assert resent.status_code == 200
+    assert resent.json()["already_exists"] is True
+    detail = client.get(f"/api/documents/{created['doc_id']}").json()
+    assert detail["content_source"] == "stored"
+    assert detail["content"] == RUNBOOK_IN_FIVE_SECTIONS
+    assert detail["file_name"] == "b.md"
+    # On every chunk, not just the first: search results carry it too.
+    points, _ = client.app.state.qdrant.scroll(
+        client.app.state.store.alias, limit=10, with_payload=["file_name"]
+    )
+    assert [point.payload["file_name"] for point in points] == ["b.md"] * 5
+
+
+def test_resending_keeps_the_stored_file_name(client: TestClient):
+    created = client.post("/api/documents", json=payload(file_name="first.md")).json()
+
+    client.post("/api/documents", json=payload(file_name="copy-of-first.md"))
+
+    detail = client.get(f"/api/documents/{created['doc_id']}").json()
+    assert detail["file_name"] == "first.md"
 
 
 def test_reingest_same_content_is_idempotent(client: TestClient):
@@ -195,6 +307,43 @@ def test_payload_accepts_only_the_contract_keys(client: TestClient):
     body = {"doc_date": "2026-08-21", "author": "Jane Doe", "content": DOC_A}
 
     assert client.post("/api/documents", json=body).status_code == 422
+
+    # The optional file name too goes only by its contract key, nazwa_pliku.
+    created = client.post("/api/documents", json={**payload(), "file_name": "a.md"})
+    assert created.status_code == 201
+    assert client.get("/api/documents").json()["documents"][0]["file_name"] is None
+
+
+@pytest.mark.parametrize(
+    ("sent", "stored"),
+    [
+        ("runbook.md", "runbook.md"),
+        ("/home/jane/docs/runbook.md", "runbook.md"),
+        ("C:\\Users\\Jane\\runbook.md", "runbook.md"),
+        ("  runbook.md\t", "runbook.md"),
+        ("run\x00book\n.md\x7f", "runbook.md"),
+        ("docs/ ", None),
+        (" \n ", None),
+        (None, None),
+    ],
+)
+def test_file_name_is_normalised_to_a_bare_name(sent: str | None, stored: str | None):
+    document = DocumentIn.model_validate({**payload(), "nazwa_pliku": sent})
+
+    assert document.file_name == stored
+
+
+def test_file_name_is_optional():
+    assert DocumentIn.model_validate(payload()).file_name is None
+
+
+def test_file_name_over_255_characters_is_rejected(client: TestClient):
+    longest = "a" * 252 + ".md"
+    assert DocumentIn.model_validate(payload(file_name=longest)).file_name == longest
+
+    response = client.post("/api/documents", json=payload(file_name="a" + longest))
+
+    assert response.status_code == 422
 
 
 def test_heading_only_document_is_rejected(client: TestClient):

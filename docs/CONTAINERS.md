@@ -54,9 +54,21 @@ or paths to additional mounts. The image does not include the AWS CLI or other
 `exec` authentication plugins.
 
 JSON reports and the SQLite database are stored under `/data/reports`. The volume
-preserves them after the container is removed. For bind mounts, configure ownership
+preserves them after the container is removed. A database created by an older image
+is upgraded in place on startup (it gains the `citations` column); its existing
+reports have no documentation citations. For bind mounts, configure ownership
 and permissions for UID/GID 10001. The healthcheck probes HTTP `/healthz`; it does
 not check the health of the LLM provider or MCP server.
+
+The `citations` upgrade is one-way: an older image fails to read reports from the
+upgraded database. Back up `/data/reports` before upgrading. To roll back, restore
+that backup, or, with agent-core stopped, drop the column (SQLite 3.35 or later) and
+then start the older image:
+
+```bash
+docker run --rm --mount type=volume,src=idar-reports,dst=/data idar-agent-core:local \
+  python -c "import sqlite3; c = sqlite3.connect('/data/reports/reports.db'); c.execute('ALTER TABLE reports DROP COLUMN citations'); c.commit()"
+```
 
 Alternatively, use the same image to run polling:
 
@@ -240,4 +252,10 @@ docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build 
 
 The panel reaches this API through `VITE_RAG_API_URL`, a browser-reachable absolute URL
 embedded at build time like `VITE_AGENT_API_URL` — changing it means rebuilding the
-panel image. Set `IDAR_CORS_ORIGINS` to the panel's exact origin.
+panel image. It uses the API for **Send**, the Knowledge base view, and the documents
+opened from a report's citations. Set `IDAR_CORS_ORIGINS` to the panel's exact origin.
+
+Upgrading the server image needs no re-ingest. Documents ingested by an older version
+stay searchable. Because their full Markdown was not stored, the Knowledge base view
+shows them rebuilt from their chunks (`content_source: "reconstructed"`). Sending the
+same file again stores the original Markdown and file name without embedding it again.

@@ -35,6 +35,38 @@ it to `.env` to override the defaults; in production
 | `IDAR_API_TOKEN` | empty | when set, `/api/documents*` and `/api/search` require `Authorization: Bearer <token>` |
 | `IDAR_STARTUP_RETRIES` / `IDAR_STARTUP_RETRY_SECONDS` | `30` / `2` | how long to wait for Ollama and Qdrant at startup (containers start in parallel) |
 
+## API
+
+| Endpoint | What it does |
+| --- | --- |
+| `POST /api/documents` | ingests a Markdown document: `201` with `doc_id`, `title`, `chunk_count`; `200` with `already_exists: true` when the same content is already stored |
+| `GET /api/documents` | lists the documents, newest first: summary fields only (`doc_id`, `title`, `file_name`, `author`, `doc_date`, `chunk_count`, `ingested_at`) |
+| `GET /api/documents/{doc_id}` | one document: the summary fields plus its full Markdown in `content` and `content_source` (`stored` or `reconstructed`, see below); `404` when there is no such document |
+| `DELETE /api/documents/{doc_id}` | deletes the document with all its chunks: `204`, or `404` |
+| `POST /api/search` | semantic search, see the next section |
+| `GET /api/health` / `GET /healthz` | readiness / liveness probes (always open) |
+
+The ingest payload keys are Polish because the team froze them: `data`
+(`YYYY-MM-DD`), `autor`, `tresc` (the Markdown, up to 15 MB) and the optional
+`nazwa_pliku`, the name of the uploaded file. The server keeps only its bare name:
+a path and control characters are dropped, and more than 255 characters is a `422`.
+The file name is shown to people (the knowledge base view, citations), never used as
+a path.
+
+Every chunk is one Qdrant point with this payload: `doc_id`, `title`, `file_name`
+(`null` when none was sent), `author`, `doc_date`, `chunk_index`, `chunk_count`,
+`section_path`, `text` (the chunk's Markdown, after an `A > B > C` breadcrumb when
+`IDAR_BREADCRUMBS` is on), `embedding_model` and `ingested_at`. The first chunk
+(`chunk_index` 0) also holds `content`: the whole Markdown as ingested, which
+`GET /api/documents/{doc_id}` returns and search never does.
+
+A document ingested before `content` was stored comes back as
+`content_source: "reconstructed"`: its chunks in order, without the breadcrumbs.
+That is close to the original but not equal to it: a heading with no text of its own
+made no chunk, and the overlap between the pieces of a long paragraph repeats.
+Sending the same Markdown again upgrades such a document without embedding it again: it
+stores `content`, and the file name when none is stored yet.
+
 ## Search contract (for agents)
 
 `POST /api/search` is a team interface: the diagnostic agents use it as their
@@ -45,7 +77,7 @@ curl -X POST http://localhost:8100/api/search -H "Content-Type: application/json
 ```
 
 Response: `results[]` (text with the section breadcrumb, score, doc_id, title,
-section_path, author, doc_date, chunk_index) plus the `embedding_model` and
+file_name, section_path, author, doc_date, chunk_index) plus the `embedding_model` and
 `collection` the result was computed on. Optional `filters` (author, date_from,
 date_to) and `score_threshold`. Change the contract only after agreeing on it with
 the team.
@@ -56,9 +88,10 @@ The chunker splits a document at its H1-H3 headings outside code blocks and keep
 every line as written (indentation, tabs), so a YAML block in a chunk is still
 valid YAML; code blocks and tables are never split. Documents ingested before
 this behaviour keep their old chunks, with the indentation stripped. The `doc_id`
-is a hash of the content, so sending the same document again only returns
-`already_exists`: delete it first (`DELETE /api/documents/{doc_id}`) and then send
-it again.
+is a hash of the content, so sending the same document again returns
+`already_exists` and keeps the old chunks (it only fills in a missing file name or
+`content`): to chunk it anew, delete it first (`DELETE /api/documents/{doc_id}`) and
+then send it again.
 
 ## Docker
 

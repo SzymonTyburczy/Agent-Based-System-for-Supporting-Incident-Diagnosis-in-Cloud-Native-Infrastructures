@@ -1,19 +1,24 @@
+import { useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Check, Copy } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyCard, ErrorCard, IssueMeta } from "../components/Cards";
+import { DocumentViewer } from "../components/DocumentViewer";
 import {
   ErrorSourcesSection,
   ProblemSection,
   RawDiagnosisSection,
   RemediationsSection,
   ReportEmptyState,
+  SourcesSection,
 } from "../components/IssueReport";
+import { useDocumentPanel } from "../hooks/useDocumentPanel";
 import { useIssueDetail } from "../hooks/useIssueDetail";
 import { useTransientFlag } from "../hooks/useTransientFlag";
 import { deriveReportSections } from "../lib/issueView";
+import type { DocCitation } from "../lib/types";
 
 function BackLink() {
   return (
@@ -51,6 +56,11 @@ export function IssueDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { detail, summary, status, error, retry, updating, updateError, toggleStatus } =
     useIssueDetail(id);
+  const { docId: openDocId, citeKey, nonce, open, close } = useDocumentPanel();
+  const openCitation = useCallback(
+    (citation: DocCitation) => open(citation.docId, citation.key),
+    [open],
+  );
 
   // Whatever the list already cached paints the header immediately; the
   // detail request revalidates behind it.
@@ -79,74 +89,108 @@ export function IssueDetailPage() {
   }
 
   const sections = detail ? deriveReportSections(detail) : null;
+  const citations = detail?.citations ?? [];
+  const citationProps = { citations, onOpenCitation: openCitation };
+  // Null for a whole-document citation (no `cite`), or one this report no
+  // longer lists: the viewer then opens the document from the top.
+  const openCitationEntry =
+    openDocId === null
+      ? null
+      : (citations.find((c) => c.docId === openDocId && c.key === citeKey) ?? null);
 
   return (
-    <div className="w-full pb-8">
-      <BackLink />
+    // Two columns at `xl` while a cited document is open (Layout drops its
+    // width cap for it, see `isWideRoute`); below that the viewer stacks
+    // under the report.
+    <div
+      className={[
+        "w-full pb-8",
+        openDocId ? "grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(420px,45%)]" : "",
+      ].join(" ")}
+    >
+      <div className="min-w-0">
+        <BackLink />
 
-      {/* One centred column. Layout's <main> stays the app's only vertical
-          scroller — no nested overflow region here, so find-in-page, deep
-          links and scroll position all behave. */}
-      <article className="mx-auto w-full max-w-4xl">
-        <PageHeader
-          eyebrow={
-            <>
-              <span className="font-mono text-sm text-[var(--color-muted)]">{head.id}</span>
-              <SeverityBadge severity={head.severity} />
-              <StatusBadge status={head.status} />
-            </>
-          }
-          title={head.title}
-          description={head.summary}
-          meta={<IssueMeta service={head.service} createdAt={head.createdAt} />}
-          actions={
-            <>
-              {detail?.markdownExport ? (
-                <CopyMarkdownButton markdown={detail.markdownExport} />
-              ) : null}
-              <button onClick={toggleStatus} disabled={updating} className="btn-secondary">
-                {updating ? "Updating…" : head.status === "pending" ? "Mark resolved" : "Reopen"}
-              </button>
-            </>
-          }
+        {/* One centred column. Layout's <main> stays the report's only
+            vertical scroller — no nested overflow region here, so
+            find-in-page, deep links and scroll position all behave. The
+            document viewer beside it is the one deliberate exception. */}
+        <article className="mx-auto w-full max-w-4xl">
+          <PageHeader
+            eyebrow={
+              <>
+                <span className="font-mono text-sm text-[var(--color-muted)]">{head.id}</span>
+                <SeverityBadge severity={head.severity} />
+                <StatusBadge status={head.status} />
+              </>
+            }
+            title={head.title}
+            description={head.summary}
+            meta={<IssueMeta service={head.service} createdAt={head.createdAt} />}
+            actions={
+              <>
+                {detail?.markdownExport ? (
+                  <CopyMarkdownButton markdown={detail.markdownExport} />
+                ) : null}
+                <button onClick={toggleStatus} disabled={updating} className="btn-secondary">
+                  {updating ? "Updating…" : head.status === "pending" ? "Mark resolved" : "Reopen"}
+                </button>
+              </>
+            }
+          />
+
+          {updateError && (
+            <div
+              role="alert"
+              className="mb-4 rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
+            >
+              {updateError}
+            </div>
+          )}
+
+          {sections ? (
+            <div className="space-y-4">
+              {sections.problem && (
+                <ProblemSection
+                  problem={sections.problem}
+                  isRaw={sections.problemIsRaw}
+                  {...citationProps}
+                />
+              )}
+              {sections.errorSources.length > 0 && (
+                <ErrorSourcesSection items={sections.errorSources} {...citationProps} />
+              )}
+              {sections.remediations.length > 0 && (
+                <RemediationsSection items={sections.remediations} {...citationProps} />
+              )}
+              {citations.length > 0 && <SourcesSection {...citationProps} />}
+              {sections.showRawDiagnosis && (
+                <RawDiagnosisSection
+                  text={sections.rawDiagnosis}
+                  defaultOpen={sections.rawDiagnosisOpen}
+                  {...citationProps}
+                />
+              )}
+              {sections.isEmpty && <ReportEmptyState />}
+            </div>
+          ) : status === "error" ? (
+            // The header is painted from the cached summary, but the detail
+            // request failed — say so instead of spinning forever.
+            <ErrorCard title="Couldn't load the full report." detail={error} onRetry={retry} />
+          ) : (
+            <EmptyCard status>Loading the full report…</EmptyCard>
+          )}
+        </article>
+      </div>
+
+      {openDocId && (
+        <DocumentViewer
+          docId={openDocId}
+          citation={openCitationEntry}
+          nonce={nonce}
+          onClose={close}
         />
-
-        {updateError && (
-          <div
-            role="alert"
-            className="mb-4 rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
-          >
-            {updateError}
-          </div>
-        )}
-
-        {sections ? (
-          <div className="space-y-4">
-            {sections.problem && (
-              <ProblemSection problem={sections.problem} isRaw={sections.problemIsRaw} />
-            )}
-            {sections.errorSources.length > 0 && (
-              <ErrorSourcesSection items={sections.errorSources} />
-            )}
-            {sections.remediations.length > 0 && (
-              <RemediationsSection items={sections.remediations} />
-            )}
-            {sections.showRawDiagnosis && (
-              <RawDiagnosisSection
-                text={sections.rawDiagnosis}
-                defaultOpen={sections.rawDiagnosisOpen}
-              />
-            )}
-            {sections.isEmpty && <ReportEmptyState />}
-          </div>
-        ) : status === "error" ? (
-          // The header is painted from the cached summary, but the detail
-          // request failed — say so instead of spinning forever.
-          <ErrorCard title="Couldn't load the full report." detail={error} onRetry={retry} />
-        ) : (
-          <EmptyCard status>Loading the full report…</EmptyCard>
-        )}
-      </article>
+      )}
     </div>
   );
 }

@@ -6,6 +6,16 @@ from pydantic import ValidationError
 from agent_core.reports_api import ReportDetail, ReportSummary, StatusUpdate
 from agent_core.reports_store import ReportRecord
 
+CITATION = {
+    "key": "KB1",
+    "doc_id": "doc-1",
+    "file_name": "pod-restarts.md",
+    "title": "Pod restart runbook",
+    "section_path": ["Pods", "Diagnosis"],
+    "chunk_index": 0,
+    "quote": "Check the previous container logs.",
+}
+
 
 def _record() -> ReportRecord:
     return ReportRecord(
@@ -20,6 +30,7 @@ def _record() -> ReportRecord:
         remediations=["Scale the payment deployment"],
         raw_diagnosis="full free-text diagnosis",
         content_md="# Checkout errors\n\nfull content",
+        citations=[CITATION, {**CITATION, "key": None, "section_path": [], "chunk_index": None, "quote": None}],
     )
 
 
@@ -32,6 +43,7 @@ def test_report_summary_excludes_detail_only_fields():
     assert "content_md" not in dumped
     assert "raw_diagnosis" not in dumped
     assert "problem" not in dumped
+    assert "citations" not in dumped
 
 
 def test_report_detail_includes_all_fields():
@@ -42,6 +54,9 @@ def test_report_detail_includes_all_fields():
     assert dumped["problem"] == "The payment service is timing out under load."
     assert dumped["error_sources"] == ["checkout pod logs"]
     assert dumped["remediations"] == ["Scale the payment deployment"]
+    assert dumped["citations"][0] == CITATION
+    assert dumped["citations"][1]["key"] is None
+    assert dumped["citations"][1]["quote"] is None
 
 
 def test_status_update_accepts_valid_statuses():

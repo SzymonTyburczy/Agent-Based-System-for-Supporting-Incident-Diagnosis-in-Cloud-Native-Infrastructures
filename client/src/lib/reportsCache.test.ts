@@ -66,6 +66,7 @@ describe("cacheReport", () => {
     remediations: [],
     rawDiagnosis: "full free-text diagnosis",
     markdownExport: "# Checkout errors",
+    citations: [],
   };
   const stored = summary({ id: "rep-old", createdAt: "2026-07-18T09:00:00Z" });
 

@@ -8,6 +8,7 @@ from app.rag.embeddings import EmbeddingProvider
 from app.rag.ingest import ingest_document
 from app.rag.store import QdrantStore
 from app.schemas import (
+    DocumentDetail,
     DocumentIn,
     DocumentIngestResponse,
     DocumentListResponse,
@@ -30,6 +31,7 @@ def create_document(
             doc_date=payload.doc_date.isoformat(),
             author=payload.author,
             content=payload.content,
+            file_name=payload.file_name,
             store=store,
             embedder=embedder,
             settings=settings,
@@ -55,6 +57,17 @@ def list_documents(
     return DocumentListResponse(
         documents=[DocumentSummary(**summary) for summary in store.list_documents()]
     )
+
+
+@router.get("/api/documents/{doc_id}", response_model=DocumentDetail)
+def get_document(
+    doc_id: str,
+    store: Annotated[QdrantStore, Depends(get_store)],
+) -> DocumentDetail:
+    document = store.get_document(doc_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found.")
+    return DocumentDetail(**document)
 
 
 @router.delete("/api/documents/{doc_id}", status_code=204)

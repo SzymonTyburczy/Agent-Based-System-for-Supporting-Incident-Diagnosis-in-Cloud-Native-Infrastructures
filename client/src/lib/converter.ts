@@ -117,14 +117,22 @@ export async function convertToMarkdown(file: File): Promise<ConversionResult> {
   throw new Error(`Unsupported file format: ${file.name}`);
 }
 
+/**
+ * Builds the ingest payload. `fileName` becomes `nazwa_pliku` only when it is
+ * non-blank: the key is optional on the server, and an empty name would only
+ * be normalised away there.
+ */
 export function buildPayload(params: {
   markdown: string;
   author: string;
   date?: Date;
+  fileName?: string;
 }): DocumentPayload {
+  const fileName = params.fileName?.trim() ?? "";
   return {
     data: format(params.date ?? new Date(), PAYLOAD_DATE_FORMAT),
     autor: params.author.trim(),
     tresc: params.markdown,
+    ...(fileName ? { nazwa_pliku: fileName } : {}),
   };
 }

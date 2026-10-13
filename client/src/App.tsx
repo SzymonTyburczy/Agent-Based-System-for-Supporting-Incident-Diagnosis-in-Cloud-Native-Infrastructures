@@ -4,6 +4,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentationPage } from "./pages/DocumentationPage";
 import { IssuesPage } from "./pages/IssuesPage";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
+import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export function App() {
@@ -13,6 +14,7 @@ export function App() {
         <Route index element={<Navigate to="/documentation" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="documentation" element={<DocumentationPage />} />
+        <Route path="knowledge-base" element={<KnowledgeBasePage />} />
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<IssueDetailPage />} />
         <Route path="settings" element={<SettingsPage />} />

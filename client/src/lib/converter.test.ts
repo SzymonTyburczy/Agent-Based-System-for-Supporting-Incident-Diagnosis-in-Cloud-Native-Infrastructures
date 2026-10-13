@@ -38,6 +38,28 @@ describe("buildPayload", () => {
       tresc: "# Incident",
     });
   });
+
+  it("adds the file name as nazwa_pliku without touching the frozen keys", () => {
+    const payload = buildPayload({
+      markdown: "# Incident",
+      author: "Jan Kowalski",
+      date: new Date(2026, 6, 14),
+      fileName: "  runbook.pdf ",
+    });
+    expect(payload).toEqual({
+      data: "2026-07-14",
+      autor: "Jan Kowalski",
+      tresc: "# Incident",
+      nazwa_pliku: "runbook.pdf",
+    });
+  });
+
+  it("leaves nazwa_pliku out entirely when there is no file name", () => {
+    for (const fileName of [undefined, "", "   "]) {
+      const payload = buildPayload({ markdown: "# Incident", author: "Jan", fileName });
+      expect(Object.keys(payload)).toEqual(["data", "autor", "tresc"]);
+    }
+  });
 });
 
 describe("convertToMarkdown", () => {

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +44,8 @@ class ReportRecord:
     raw_diagnosis: str
     content_md: str
     status: str = "pending"
+    # Documentation citations, as built by citations.resolve_report_citations.
+    citations: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.status not in VALID_STATUSES:
@@ -63,6 +65,7 @@ class ReportRecord:
             "remediations": list(self.remediations),
             "raw_diagnosis": self.raw_diagnosis,
             "content_md": self.content_md,
+            "citations": list(self.citations),
         }
 
 
@@ -79,7 +82,8 @@ CREATE TABLE IF NOT EXISTS reports (
     error_sources TEXT NOT NULL,
     remediations TEXT NOT NULL,
     raw_diagnosis TEXT NOT NULL,
-    content_md TEXT NOT NULL
+    content_md TEXT NOT NULL,
+    citations TEXT NOT NULL DEFAULT '[]'
 )
 """
 
@@ -103,8 +107,21 @@ class ReportsStore:
         if self._db_path != ":memory:":
             Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        # Rows are read by column name, so a column added by the migration
+        # below (appended last) decodes the same as in a fresh database.
+        self._conn.row_factory = sqlite3.Row
         self._conn.execute(_CREATE_TABLE_SQL)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Brings a database created by an older version up to the current
+        schema in place. CREATE TABLE IF NOT EXISTS leaves an existing
+        table untouched, so new columns have to be added here.
+        """
+        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(reports)")}
+        if "citations" not in columns:
+            self._conn.execute("ALTER TABLE reports ADD COLUMN citations TEXT NOT NULL DEFAULT '[]'")
 
     def close(self) -> None:
         self._conn.close()
@@ -115,8 +132,8 @@ class ReportsStore:
             INSERT INTO reports (
                 id, generated_at, title, service, severity, status,
                 summary, problem, error_sources, remediations,
-                raw_diagnosis, content_md
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                raw_diagnosis, content_md, citations
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.id,
@@ -131,6 +148,7 @@ class ReportsStore:
                 json.dumps(record.remediations),
                 record.raw_diagnosis,
                 record.content_md,
+                json.dumps(record.citations),
             ),
         )
         self._conn.commit()
@@ -174,32 +192,19 @@ class ReportsStore:
             return None
         return self.get(report_id)
 
-    def _row_to_record(self, row: sqlite3.Row | tuple) -> ReportRecord:
-        (
-            id_,
-            generated_at,
-            title,
-            service,
-            severity,
-            status,
-            summary,
-            problem,
-            error_sources,
-            remediations,
-            raw_diagnosis,
-            content_md,
-        ) = row
+    def _row_to_record(self, row: sqlite3.Row) -> ReportRecord:
         return ReportRecord(
-            id=id_,
-            generated_at=generated_at,
-            title=title,
-            service=service,
-            severity=severity,
-            status=status,
-            summary=summary,
-            problem=problem,
-            error_sources=json.loads(error_sources),
-            remediations=json.loads(remediations),
-            raw_diagnosis=raw_diagnosis,
-            content_md=content_md,
+            id=row["id"],
+            generated_at=row["generated_at"],
+            title=row["title"],
+            service=row["service"],
+            severity=row["severity"],
+            status=row["status"],
+            summary=row["summary"],
+            problem=row["problem"],
+            error_sources=json.loads(row["error_sources"]),
+            remediations=json.loads(row["remediations"]),
+            raw_diagnosis=row["raw_diagnosis"],
+            content_md=row["content_md"],
+            citations=json.loads(row["citations"]),
         )

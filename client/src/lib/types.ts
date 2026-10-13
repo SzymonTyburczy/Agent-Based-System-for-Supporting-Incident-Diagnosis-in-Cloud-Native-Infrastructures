@@ -35,6 +35,27 @@ export interface IssueDetail extends IssueSummary {
    * "Copy Markdown" button and nothing else.
    */
   markdownExport: string;
+  /** The knowledge-base documents the diagnosis relied on, in the report's own order. */
+  citations: DocCitation[];
+}
+
+/**
+ * One documentation source of a report, resolved by agent-core from the
+ * `[KBn]` keys the LLM was handed (`agent_core/citations.py`), so `docId`
+ * always names a document that was really retrieved.
+ */
+export interface DocCitation {
+  /** "KB1"…, as it appears in the report text; null for a whole-document
+   * citation (the report names the document but cites no passage of it). */
+  key: string | null;
+  docId: string;
+  /** Never empty: the decoder falls back to the title, then to the doc id. */
+  fileName: string;
+  title: string;
+  sectionPath: string[];
+  chunkIndex: number | null;
+  /** The cited chunk's text; null for a whole-document citation. */
+  quote: string | null;
 }
 
 /**
@@ -46,6 +67,33 @@ export interface DocumentPayload {
   data: string;
   autor: string;
   tresc: string;
+  /** The uploaded file's name (an additive, optional key of the same contract). */
+  nazwa_pliku?: string;
+}
+
+/** One row of the knowledge base's `GET /api/documents` — metadata only, no text. */
+export interface KbDocumentSummary {
+  docId: string;
+  title: string;
+  /** Null for a document ingested before file names were recorded. */
+  fileName: string | null;
+  author: string;
+  /** The ingest payload's `data`, yyyy-MM-dd. */
+  docDate: string;
+  chunkCount: number;
+  /** ISO-8601, set by the server. */
+  ingestedAt: string;
+}
+
+/** `GET /api/documents/{doc_id}`: the summary plus the full Markdown. */
+export interface KbDocument extends KbDocumentSummary {
+  content: string;
+  /**
+   * "reconstructed" for a document ingested before the server kept the
+   * original: its text was stitched back together from the indexed chunks, so
+   * it may not match the uploaded file exactly.
+   */
+  contentSource: "stored" | "reconstructed";
 }
 
 export type SourceFormat = "pdf" | "markdown" | "text";
