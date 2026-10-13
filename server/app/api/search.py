@@ -31,6 +31,8 @@ def search(
             score=point.score,
             doc_id=payload["doc_id"],
             title=payload["title"],
+            # Absent on documents ingested before file names were stored.
+            file_name=payload.get("file_name"),
             section_path=payload["section_path"],
             author=payload["author"],
             doc_date=payload["doc_date"],

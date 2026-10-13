@@ -24,6 +24,7 @@ def ingest_document(
     doc_date: str,
     author: str,
     content: str,
+    file_name: str | None = None,
     store: QdrantStore,
     embedder: EmbeddingProvider,
     settings: Settings,
@@ -32,6 +33,9 @@ def ingest_document(
     title = extract_title(content) or f"Document {document_id[:8]}"
 
     if store.document_complete(document_id):
+        # A document ingested before file names and the full Markdown were
+        # stored gets them when it is sent again.
+        store.backfill_document(document_id, file_name=file_name, content=content)
         return IngestResult(
             doc_id=document_id,
             title=title,
@@ -57,12 +61,13 @@ def ingest_document(
     meta = DocumentMeta(
         doc_id=document_id,
         title=title,
+        file_name=file_name,
         author=author,
         doc_date=doc_date,
         embedding_model=embedder.model_id,
         ingested_at=datetime.now(UTC).isoformat(),
     )
-    store.upsert_chunks(meta, chunks, vectors)
+    store.upsert_chunks(meta, chunks, vectors, content=content)
     return IngestResult(
         doc_id=document_id, title=title, chunk_count=len(chunks), already_exists=False
     )

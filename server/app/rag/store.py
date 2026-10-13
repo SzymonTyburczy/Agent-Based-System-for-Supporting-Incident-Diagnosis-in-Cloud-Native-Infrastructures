@@ -5,7 +5,7 @@ from itertools import batched
 
 from qdrant_client import QdrantClient, models
 
-from app.rag.chunking import Chunk
+from app.rag.chunking import Chunk, breadcrumb
 from app.rag.ids import point_id
 
 DENSE_VECTOR = "dense"
@@ -15,7 +15,15 @@ SCHEMA_VERSION = 1
 # request.
 UPSERT_BATCH_SIZE = 64
 
-_SUMMARY_FIELDS = ["doc_id", "title", "author", "doc_date", "chunk_count", "ingested_at"]
+_SUMMARY_FIELDS = [
+    "doc_id",
+    "title",
+    "file_name",
+    "author",
+    "doc_date",
+    "chunk_count",
+    "ingested_at",
+]
 
 
 def collection_name(model_id: str, dimension: int) -> str:
@@ -27,6 +35,7 @@ def collection_name(model_id: str, dimension: int) -> str:
 class DocumentMeta:
     doc_id: str
     title: str
+    file_name: str | None
     author: str
     doc_date: str
     embedding_model: str
@@ -76,8 +85,15 @@ class QdrantStore:
         return None
 
     def upsert_chunks(
-        self, meta: DocumentMeta, chunks: list[Chunk], vectors: list[list[float]]
+        self,
+        meta: DocumentMeta,
+        chunks: list[Chunk],
+        vectors: list[list[float]],
+        *,
+        content: str,
     ) -> None:
+        """Stores the chunks, and on the first one the full Markdown, which
+        the knowledge base view shows and citations point into."""
         points = [
             models.PointStruct(
                 id=point_id(meta.doc_id, chunk.index),
@@ -85,6 +101,7 @@ class QdrantStore:
                 payload={
                     "doc_id": meta.doc_id,
                     "title": meta.title,
+                    "file_name": meta.file_name,
                     "author": meta.author,
                     "doc_date": meta.doc_date,
                     "chunk_index": chunk.index,
@@ -100,6 +117,9 @@ class QdrantStore:
         try:
             for batch in batched(points, UPSERT_BATCH_SIZE):
                 self._client.upsert(collection_name=self.alias, points=list(batch))
+            # A request of its own: up to 15 MB of text in the first batch,
+            # next to its vectors, would get close to Qdrant's request limit.
+            self._set_content(meta.doc_id, content)
         except Exception:
             # Best effort: a failed ingest should leave nothing behind. When
             # Qdrant cannot take this delete either, the leftover chunks fail
@@ -111,6 +131,36 @@ class QdrantStore:
         return models.Filter(
             must=[models.FieldCondition(key="doc_id", match=models.MatchValue(value=document_id))]
         )
+
+    def _set_content(self, document_id: str, content: str) -> None:
+        self._client.set_payload(
+            self.alias, payload={"content": content}, points=[point_id(document_id, 0)]
+        )
+
+    def _first_chunk_lacks(self, document_id: str, key: str) -> bool:
+        """Whether the payload key is missing (or null) on the document's first
+        chunk. A count, so checking for the content does not download it."""
+        lacking = models.Filter(
+            must=[
+                models.HasIdCondition(has_id=[point_id(document_id, 0)]),
+                models.IsEmptyCondition(is_empty=models.PayloadField(key=key)),
+            ]
+        )
+        return self._client.count(self.alias, count_filter=lacking, exact=True).count > 0
+
+    def backfill_document(self, document_id: str, *, file_name: str | None, content: str) -> None:
+        """Upgrades a document ingested before file names and the full Markdown
+        were stored, when the same file is sent again. A file name already
+        stored is kept: the doc_id is a hash of the content, so a copy under
+        another name is the same document."""
+        if file_name and self._first_chunk_lacks(document_id, "file_name"):
+            self._client.set_payload(
+                self.alias,
+                payload={"file_name": file_name},
+                points=models.FilterSelector(filter=self._doc_filter(document_id)),
+            )
+        if self._first_chunk_lacks(document_id, "content"):
+            self._set_content(document_id, content)
 
     def count_chunks(self, document_id: str) -> int:
         result = self._client.count(
@@ -172,7 +222,8 @@ class QdrantStore:
             limit=top_k,
             query_filter=models.Filter(must=conditions) if conditions else None,
             score_threshold=score_threshold,
-            with_payload=True,
+            # The full Markdown on a document's first chunk: search results stay light.
+            with_payload=models.PayloadSelectorExclude(exclude=["content"]),
         )
         return result.points
 
@@ -193,3 +244,50 @@ class QdrantStore:
             if offset is None:
                 break
         return sorted(summaries.values(), key=lambda p: p.get("ingested_at", ""), reverse=True)
+
+    def get_document(self, document_id: str) -> dict | None:
+        """The document's summary fields plus its full Markdown in `content`;
+        None when no such document is stored."""
+        records = self._client.retrieve(
+            self.alias,
+            ids=[point_id(document_id, 0)],
+            with_payload=[*_SUMMARY_FIELDS, "content"],
+            with_vectors=False,
+        )
+        if not records:
+            return None
+        document = dict(records[0].payload or {})
+        if "content" in document:
+            document["content_source"] = "stored"
+        else:
+            document["content"] = self._reconstruct_content(document_id)
+            document["content_source"] = "reconstructed"
+        return document
+
+    def _reconstruct_content(self, document_id: str) -> str:
+        """The chunks of a document ingested before its Markdown was stored,
+        in order and without their breadcrumbs. Close to the original, not
+        equal to it: a heading with no text of its own made no chunk, the
+        overlap between the pieces of a long paragraph repeats, and chunks
+        from before the verbatim chunker lost their indentation."""
+        chunks: list[dict] = []
+        offset = None
+        while True:
+            points, offset = self._client.scroll(
+                self.alias,
+                scroll_filter=self._doc_filter(document_id),
+                limit=256,
+                offset=offset,
+                with_payload=["text", "chunk_index", "section_path"],
+                with_vectors=False,
+            )
+            chunks.extend(point.payload or {} for point in points)
+            if offset is None:
+                break
+        texts: list[str] = []
+        for chunk in sorted(chunks, key=lambda c: c["chunk_index"]):
+            text, path = chunk["text"], chunk["section_path"]
+            if path:
+                text = text.removeprefix(breadcrumb(path))
+            texts.append(text)
+        return "\n\n".join(texts)

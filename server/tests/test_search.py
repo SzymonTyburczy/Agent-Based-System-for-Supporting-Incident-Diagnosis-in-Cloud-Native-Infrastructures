@@ -103,6 +103,24 @@ def test_score_threshold_can_filter_everything_out(client: TestClient):
     assert search(client, score_threshold=0.999)["results"] == []
 
 
+def test_search_results_carry_the_file_name_but_not_the_full_markdown(client: TestClient):
+    client.post(
+        "/api/documents",
+        json={"data": "2026-08-01", "autor": "Alice", "tresc": DOC_PODS, "nazwa_pliku": "pods.md"},
+    )
+
+    top = search(client)["results"][0]
+
+    assert top["file_name"] == "pods.md"
+    assert top["chunk_index"] == 0
+    # The first chunk holds the whole document in its payload; the store must
+    # not hand it to search.
+    store = client.app.state.store
+    points = store.query(client.app.state.embedder.embed_query(QUERY_PODS), top_k=5)
+    assert points
+    assert all("content" not in point.payload for point in points)
+
+
 def test_search_request_validation(client: TestClient):
     assert client.post("/api/search", json={"query": ""}).status_code == 422
     assert client.post("/api/search", json={"query": "x", "top_k": 0}).status_code == 422

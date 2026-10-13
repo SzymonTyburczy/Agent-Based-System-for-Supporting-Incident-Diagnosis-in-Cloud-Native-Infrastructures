@@ -1,4 +1,5 @@
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 # 3.5 characters per token: Polish is less token-efficient than English, and
@@ -38,6 +39,13 @@ class Chunk:
     text: str
     section_path: tuple[str, ...]
     index: int
+
+
+def breadcrumb(section_path: Sequence[str]) -> str:
+    """The prefix a chunk's text gets with breadcrumbs on. One definition, since
+    a document stored without its full Markdown is put back together by
+    stripping it again."""
+    return f"{' > '.join(section_path)}\n\n"
 
 
 def extract_title(markdown: str) -> str | None:
@@ -241,6 +249,6 @@ def build_chunks(
 
         for text in _pack(expanded, max_chars, min_chars):
             if breadcrumbs and path:
-                text = f"{' > '.join(path)}\n\n{text}"
+                text = breadcrumb(path) + text
             chunks.append(Chunk(text=text, section_path=path, index=len(chunks)))
     return chunks
