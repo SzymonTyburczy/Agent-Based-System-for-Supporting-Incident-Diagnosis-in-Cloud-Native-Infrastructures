@@ -352,6 +352,8 @@ container with the new environment, or restart the Kubernetes Deployment.
 
 Submit an alert as in step 3 with symptoms matching the runbook. Startup logs should
 list `search_knowledge_base`; a retrieval call logs `tool=search_knowledge_base`.
+The knowledge-base skill is in the system prompt only when `RAG_API_URL` is set; the
+`System prompt:` log line lists it under `skills=`.
 The tool shows the model each hit under a short key (`[KB1]`, `[KB2]`, …) instead
 of document ids. The diagnosis should put that key after each statement that relies
 on the runbook, alongside telemetry evidence. Retrieval and citing are chosen by the
@@ -531,7 +533,8 @@ API behavior. Frontend tests cover API mapping, document conversion, the
 knowledge-base requests and search, and the citation helpers (markers to chips,
 finding a cited passage). A few components are rendered to static markup to check
 the chips, highlights, and viewer notes. The build also checks TypeScript. These
-checks complement, rather than replace, the live flow above.
+checks complement, rather than replace, the live flow above. Building the
+`agent-core` image also fails when prompt files are missing from the installed package.
 
 The converter also has an independent test suite using an injected pipeline, without
 loading Docling models. After installing its development dependencies, run from the

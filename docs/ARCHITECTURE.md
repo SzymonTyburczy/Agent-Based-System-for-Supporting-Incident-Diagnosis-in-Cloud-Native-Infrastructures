@@ -94,7 +94,9 @@ agent searches them through `search_knowledge_base` when `RAG_API_URL` is config
    from labels. Payloads without an actionable firing alert return `ignored`.
 3. The API enqueues the incident and immediately returns `{"status":"queued"}`.
    This confirms acceptance, not successful completion of the investigation.
-4. A single worker creates a fresh conversation with the incident and system prompt.
+4. A single worker creates a fresh conversation with the incident and a system prompt
+   composed from the generic core, the skills for the registered tools and the
+   `AGENT_ENVIRONMENT` profile.
    The provider receives the conversation and the registered tool schemas.
 5. The LLM requests tools. The registry dispatches them to kubectl, Grafana MCP, or
    (when configured) the knowledge-base search, and the results are appended to the
@@ -151,7 +153,8 @@ and the queue worker used by the panel. It does not automatically start `main.py
 
 `python main.py` runs a separate polling process. It checks alert signatures and
 investigates when the firing set changes. `AGENT_RUN_ONCE=true` performs one
-investigation, using a fallback question if no firing alerts are found.
+investigation, using the environment's fallback question (or the generic one) if no
+firing alerts are found.
 Currently this path writes JSON files only: it does not insert SQLite records or
 publish report events, so its reports do not automatically appear in the panel.
 Running both processes may produce duplicate diagnoses; they do not share deduplication.
@@ -188,9 +191,10 @@ valid for one investigation, and that key links the report text to the RAG data:
    model as `"cite": "[KB1]"` with the file name, title, section, and text. The
    document and chunk ids stay in the ledger. A passage that a later search finds
    again keeps its key.
-3. The system prompt tells the agent to put the cite value right after each
-   statement that relies on that result. If the iteration budget runs out, the
-   wrap-up request asks it to keep the markers.
+3. The knowledge-base skill, in the system prompt when `search_knowledge_base` is
+   registered, tells the agent to put the cite value right after each statement
+   that relies on that result. If the iteration budget runs out, the wrap-up
+   request asks it to keep the markers (also only when the tool is registered).
 4. The report-generation step is given the valid keys
    (`KB1 = runbook.md (Section > Sub)`, and so on) in a reference-only user message,
    not in its system prompt, because the names come from uploaded documents. It

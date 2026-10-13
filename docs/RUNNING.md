@@ -170,8 +170,9 @@ the documents sent so far.
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `llama3.1` | required if `LLM_PROVIDER=ollama` |
 | `MCP_GRAFANA_URL` | `http://localhost:8000/sse` | Grafana MCP server address; startup fails if unreachable |
 | `MCP_GRAFANA_TOOL_ALLOWLIST` | curated ~20-tool list | which MCP tools get registered (avoids TPM rate limits) |
-| `KUBECTL_ALLOWED_NAMESPACES` | `otel-demo` | empty = no restriction |
+| `KUBECTL_ALLOWED_NAMESPACES` | empty in code; `otel-demo` in `.env.example` | empty = no restriction |
 | `AGENT_MAX_ITERATIONS` | `12` | ReAct loop step budget per investigation |
+| `AGENT_ENVIRONMENT` | empty in code; `otel-demo` in `.env.example` | infrastructure profile for the prompt: built-in name, directory path, or empty; an older `.env` without it gets the generic prompt |
 | `RAG_API_URL` | empty in code; `http://localhost:8100` in `.env.example` | enables the documentation search tool; empty disables it |
 | `RAG_API_TOKEN` | empty | must match the RAG server's `IDAR_API_TOKEN` when enabled |
 | `RAG_TOP_K` / `RAG_TIMEOUT_SECONDS` | `5` / `30` | retrieved excerpt count (1–20) and total search timeout (up to 300 seconds) |

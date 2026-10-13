@@ -190,3 +190,10 @@ An unconstrained dependency installed MCP SDK 2.x, whose tool schema attributes
 were incompatible with the adapter. The dependency now specifies `mcp>=1.2,<2`.
 Runtime images include kubectl, run as a non-root user, and store persistent reports
 under `/data` when the documented volume is mounted.
+
+## Prompt files
+
+Prompt text now lives in `agent_core/prompts/` and `agent_core/environments/`, composed
+by `agent_core/prompting.py`. The RFC3339, label-lookup and alerting list-only rules
+described above (once guideline 6 in `incident.py`) are in `prompts/skills/grafana.md`;
+the current-time anchor is in `prompts/core.md`.
