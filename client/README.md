@@ -13,14 +13,25 @@ Diagnosis in Cloud-Native Infrastructures_.
     useful when the converter flattens a code block, or a section simply is not wanted.
   - After processing, a JSON payload is built for submission:
     ```json
-    { "data": "<date yyyy-MM-dd>", "autor": "<author>", "tresc": "<markdown>" }
+    {
+      "data": "<date yyyy-MM-dd>",
+      "autor": "<author>",
+      "tresc": "<markdown>",
+      "nazwa_pliku": "<file name>"
+    }
     ```
+    (`nazwa_pliku` is optional and only sent when there is a file name.)
   - **Send** posts it to the RAG knowledge base (`POST /api/documents`) and clears the
     form. The confirmation says whether the document was indexed or was already there
     (re-sending identical content is a no-op, not a duplicate); on failure the draft
     stays on screen with the server's explanation.
   - A draft (file name, converted content, metadata) is persisted in `localStorage`, so a
     page refresh does not lose your work.
+- **Knowledge base** — the documents in the RAG knowledge base, with a search box that
+  filters by file name or title (case- and accent-insensitive). Opening a document shows
+  its full Markdown beside the list; a document added before the server kept originals
+  is rebuilt from its indexed fragments and marked as such. Each document can be
+  deleted (after a confirmation).
 - **Issues** — incidents split into _pending_ and _resolved_, loaded from the diagnostic
   agent (`agent-core`) via its REST API and kept in sync live over Server-Sent Events — a
   new investigation or a status change appears without refreshing the page. Clicking an
@@ -28,7 +39,11 @@ Diagnosis in Cloud-Native Infrastructures_.
   structured findings — the problem, the error sources it inspected, its suggested
   remediations, and the raw model diagnosis behind a collapsible disclosure — plus a
   "Mark resolved"/"Reopen" action and a "Copy Markdown" button that yields the agent's
-  own Markdown rendering of the report.
+  own Markdown rendering of the report. When the diagnosis relied on documentation, the
+  report lists its **documentation sources** and shows numbered chips where the text
+  cites them; clicking one opens the document in a side panel, scrolled to and
+  highlighting the cited passage. The open document is part of the URL
+  (`?doc=…&cite=…`), so it can be linked to, and Back closes it.
 - **Dashboard** — shortcuts and issue counts, also sourced live from `agent-core`.
 - **Settings** — the default document author. Conversion and model settings belong to the
   `doc-converter` service, not to this panel.

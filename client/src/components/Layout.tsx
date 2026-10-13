@@ -4,6 +4,7 @@ import {
   Activity,
   FileText,
   LayoutDashboard,
+  Library,
   Radio,
   Settings,
   ShieldAlert,
@@ -13,10 +14,12 @@ import { AppErrorBoundary } from "./AppErrorBoundary";
 import { ReportsStream } from "./ReportsStream";
 import { useStreamStatus } from "../hooks/streamContext";
 import { ConverterStatus } from "./ConverterStatus";
+import { isWideRoute } from "../lib/layout";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/documentation", label: "Documentation", icon: FileText },
+  { to: "/knowledge-base", label: "Knowledge base", icon: Library },
   { to: "/issues", label: "Issues", icon: ShieldAlert },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
@@ -63,7 +66,7 @@ function StreamStatusPill() {
 
 export function Layout() {
   const mainRef = useRef<HTMLElement>(null);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   // <main> is the scroller, not window, and nothing reset it — invisible only
   // while the detail page was pinned to one viewport.
@@ -117,7 +120,14 @@ export function Layout() {
         </aside>
 
         <main ref={mainRef} className="flex-1 overflow-y-auto">
-          <div className="mx-auto flex h-full max-w-6xl flex-col px-4 py-6 md:px-8 md:py-8">
+          {/* No width cap where a document viewer sits beside the content: at
+              `xl` it takes 45% of the row, which max-w-6xl would starve. */}
+          <div
+            className={[
+              "mx-auto flex h-full flex-col px-4 py-6 md:px-8 md:py-8",
+              isWideRoute(pathname, search) ? "" : "max-w-6xl",
+            ].join(" ")}
+          >
             {/* Keyed by pathname so navigating away clears a caught error. */}
             <AppErrorBoundary key={pathname}>
               <Outlet />

@@ -8,7 +8,7 @@
  * below is unit-testable without a DOM.
  */
 
-import type { IssueDetail, IssueSeverity, IssueStatus, IssueSummary } from "./types";
+import type { DocCitation, IssueDetail, IssueSeverity, IssueStatus, IssueSummary } from "./types";
 
 type DecodeResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
@@ -47,6 +47,35 @@ function stringList(value: unknown): string[] {
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+/**
+ * Skips only an entry with no usable `doc_id`: without one the citation cannot
+ * open its document. Everything else is defaulted — a citation with a broken
+ * quote still opens the right document, just from the top. A report stored
+ * before citations existed has no array at all and decodes to `[]`.
+ */
+function citationList(value: unknown): DocCitation[] {
+  if (!Array.isArray(value)) return [];
+
+  const citations: DocCitation[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const docId = typeof item.doc_id === "string" ? item.doc_id.trim() : "";
+    if (!docId) continue;
+
+    const title = text(item.title).trim();
+    citations.push({
+      key: text(item.key).trim() || null,
+      docId,
+      fileName: text(item.file_name).trim() || title || docId,
+      title,
+      sectionPath: stringList(item.section_path),
+      chunkIndex: Number.isInteger(item.chunk_index) ? (item.chunk_index as number) : null,
+      quote: typeof item.quote === "string" ? item.quote : null,
+    });
+  }
+  return citations;
 }
 
 function severity(value: unknown): IssueSeverity {
@@ -105,6 +134,7 @@ export function parseReportDetail(
       remediations: stringList(record.remediations),
       rawDiagnosis: text(record.raw_diagnosis),
       markdownExport: text(record.content_md),
+      citations: citationList(record.citations),
     },
   };
 }

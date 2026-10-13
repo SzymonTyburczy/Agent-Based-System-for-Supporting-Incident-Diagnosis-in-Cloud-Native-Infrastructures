@@ -65,6 +65,33 @@
   }
 }
 
+/*
+ * A cited passage in the document viewer (MarkdownPreview's `highlight`).
+ * Unlayered on purpose: typography's `prose-pre:bg-*` utility would otherwise
+ * win over it on a code block. The two shadows widen the tint past the text
+ * without shifting the layout the way padding would — sideways only, so two
+ * tight list items never overlap into a darker band.
+ */
+.cite-highlight {
+  --cite-tint: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  border-radius: 0.25rem;
+  background-color: var(--cite-tint);
+  box-shadow:
+    -0.375rem 0 0 var(--cite-tint),
+    0.375rem 0 0 var(--cite-tint);
+}
+
+/* Only one level is tinted, or nested highlights would double the colour: the
+   innermost block when the outer one holds no text of its own (a blockquote or
+   a loose list item around a highlighted paragraph), else the outer block — a
+   tight list item whose text precedes its highlighted sub-items
+   (`data-cite-own`), whose tint already covers them. */
+.cite-highlight:not([data-cite-own]):has(.cite-highlight),
+.cite-highlight[data-cite-own] .cite-highlight {
+  background-color: transparent;
+  box-shadow: none;
+}
+
 html,
 body,
 #root {

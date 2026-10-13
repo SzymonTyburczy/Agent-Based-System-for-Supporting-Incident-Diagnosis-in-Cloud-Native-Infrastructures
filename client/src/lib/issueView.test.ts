@@ -16,6 +16,7 @@ function detail(overrides: Partial<IssueDetail> = {}): IssueDetail {
     remediations: ["Scale the payment deployment"],
     rawDiagnosis: "Report:\nThe alert is firing.",
     markdownExport: "# Checkout errors",
+    citations: [],
     ...overrides,
   };
 }

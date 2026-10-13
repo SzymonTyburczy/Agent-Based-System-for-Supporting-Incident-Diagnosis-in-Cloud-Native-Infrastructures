@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { Check, Loader2, Send } from "lucide-react";
@@ -11,6 +12,7 @@ import {
   PAYLOAD_DATE_FORMAT,
   type ConversionEngine,
 } from "../lib/converter";
+import { documentKeys } from "../lib/documentsCache";
 import { ingestDocument } from "../lib/knowledgeBase";
 import { getDefaultAuthor } from "../lib/settings";
 import {
@@ -25,6 +27,7 @@ import type { DocumentPayload, SourceFormat } from "../lib/types";
 type RightTab = "preview" | "edit";
 
 export function DocumentationPage() {
+  const queryClient = useQueryClient();
   const [draft] = useState(() => loadDocDraft());
   const [status, setStatus] = useState<UploadStatus>(draft?.status ?? "idle");
   const [fileName, setFileName] = useState(draft?.fileName ?? "");
@@ -92,8 +95,8 @@ export function DocumentationPage() {
   );
 
   const payload: DocumentPayload = useMemo(
-    () => buildPayload({ markdown, author, date }),
-    [markdown, author, date],
+    () => buildPayload({ markdown, author, date, fileName }),
+    [markdown, author, date, fileName],
   );
 
   const reset = () => {
@@ -120,6 +123,10 @@ export function DocumentationPage() {
     setNotice("");
     try {
       const result = await ingestDocument(payload);
+      // `all`, not just the list: re-sending a document added before the
+      // server kept originals and file names upgrades it in place, so a cached
+      // copy of it may be stale too.
+      void queryClient.invalidateQueries({ queryKey: documentKeys.all });
       // The form is locked while sending, so reset() only clears what was just
       // sent — never an edit or a new file made while the request was in flight.
       // Order matters: reset() clears the notice, so the message is set after it.
