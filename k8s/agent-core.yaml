@@ -96,6 +96,8 @@ data:
   MCP_GRAFANA_TOOL_PREFIX: grafana_
   MCP_GRAFANA_TOOL_ALLOWLIST: list_datasources,check_datasources_health,query_prometheus,query_prometheus_histogram,list_prometheus_metric_names,list_prometheus_metric_metadata,list_prometheus_label_names,list_prometheus_label_values,query_loki_logs,query_loki_stats,query_loki_patterns,analyze_loki_labels,list_loki_label_names,list_loki_label_values,search_dashboards,get_dashboard_by_uid,get_dashboard_panel_queries,get_dashboard_summary,alerting_manage_rules
   AGENT_MAX_ITERATIONS: "12"
+  # Prompt infrastructure profile: built-in name or a directory path (mounted ConfigMap). Empty = generic.
+  AGENT_ENVIRONMENT: otel-demo
   RAG_API_URL: http://rag-server:8080
   RAG_TOP_K: "5"
   RAG_TIMEOUT_SECONDS: "30"
