@@ -50,6 +50,16 @@ section_path, author, doc_date, chunk_index) plus the `embedding_model` and
 date_to) and `score_threshold`. Change the contract only after agreeing on it with
 the team.
 
+## Chunks keep the Markdown verbatim
+
+The chunker splits a document at its H1-H3 headings outside code blocks and keeps
+every line as written (indentation, tabs), so a YAML block in a chunk is still
+valid YAML; code blocks and tables are never split. Documents ingested before
+this behaviour keep their old chunks, with the indentation stripped. The `doc_id`
+is a hash of the content, so sending the same document again only returns
+`already_exists`: delete it first (`DELETE /api/documents/{doc_id}`) and then send
+it again.
+
 ## Docker
 
 The image follows the conventions of the other IDAR images (`docs/CONTAINERS.md`):

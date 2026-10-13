@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,8 +22,10 @@ class Settings(BaseSettings):
         "Given a technical question about cloud-native infrastructure incidents, "
         "retrieve relevant documentation passages that help diagnose or resolve the issue"
     )
-    chunk_max_tokens: int = 600
-    chunk_overlap_tokens: int = 80
+    # Validated: a zero budget sends the chunker's sentence splitter into an
+    # endless loop, and a negative overlap makes it skip text.
+    chunk_max_tokens: int = Field(600, gt=0)
+    chunk_overlap_tokens: int = Field(80, ge=0)
     breadcrumbs: bool = True
 
     # Origins allowed by CORS, comma-separated: the panel from Vite (5173) and the

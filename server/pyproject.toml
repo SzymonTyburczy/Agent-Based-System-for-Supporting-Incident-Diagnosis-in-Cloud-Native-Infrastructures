@@ -9,7 +9,6 @@ dependencies = [
     # wheel builds a reputation; 1.71.0 has one and passes.
     "grpcio==1.71.0",
     "langchain-ollama>=1.1.0",
-    "langchain-text-splitters>=1.1.2",
     "pydantic-settings>=2.15.0",
     "qdrant-client>=1.19.0",
 ]
