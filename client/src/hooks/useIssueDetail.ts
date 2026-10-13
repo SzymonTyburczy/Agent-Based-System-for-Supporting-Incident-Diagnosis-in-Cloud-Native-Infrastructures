@@ -34,6 +34,10 @@ export function useIssueDetail(id: string | undefined): UseIssueDetailResult {
     // The PATCH response is authoritative; a read still in flight carries the
     // pre-write state and would otherwise land last and revert the toggle.
     onMutate: () => client.cancelQueries({ queryKey: reportKeys.detail(id ?? "") }),
+    // The cancel above reverts a FIRST read to an idle, error-free "pending"
+    // that nothing restarts (`staleTime: Infinity`), so a failed write would
+    // leave the page on "Loading the full report…" for good. Hand the read back.
+    onError: () => void client.invalidateQueries({ queryKey: reportKeys.detail(id ?? "") }),
     // Not optimistic: the server echoes the full detail and its own
     // `report_updated` follows moments later. Briefly showing an incident as
     // resolved when the write failed is a worse lie than 200ms of "Updating…".

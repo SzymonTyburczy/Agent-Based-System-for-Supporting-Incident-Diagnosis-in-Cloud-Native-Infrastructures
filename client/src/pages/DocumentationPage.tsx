@@ -35,7 +35,7 @@ export function DocumentationPage() {
   const [markdown, setMarkdown] = useState(draft?.markdown ?? "");
   // `||` (not `??`): an empty author persisted in the draft must not shadow
   // the default author configured later in Settings.
-  const [author, setAuthor] = useState(draft?.author || getDefaultAuthor());
+  const [author, setAuthor] = useState(() => draft?.author || getDefaultAuthor());
   const [date, setDate] = useState<Date>(() =>
     draft?.dateISO ? new Date(draft.dateISO) : new Date(),
   );
@@ -120,6 +120,8 @@ export function DocumentationPage() {
     setNotice("");
     try {
       const result = await ingestDocument(payload);
+      // The form is locked while sending, so reset() only clears what was just
+      // sent — never an edit or a new file made while the request was in flight.
       // Order matters: reset() clears the notice, so the message is set after it.
       reset();
       const fragments = `${result.chunkCount} fragment${result.chunkCount === 1 ? "" : "s"}`;
@@ -158,6 +160,7 @@ export function DocumentationPage() {
             onFile={(file) => void handleFile(file)}
             onReject={setError}
             onReset={reset}
+            disabled={sending}
           />
 
           {error && (
@@ -192,6 +195,7 @@ export function DocumentationPage() {
                   id="doc-author"
                   value={author}
                   onChange={(e) => setAuthor(e.target.value)}
+                  disabled={sending}
                   placeholder="Author name"
                   className="input"
                 />
@@ -208,6 +212,7 @@ export function DocumentationPage() {
                   selected={date}
                   onChange={(value: Date | null) => value && setDate(value)}
                   dateFormat={PAYLOAD_DATE_FORMAT}
+                  disabled={sending}
                   wrapperClassName="w-full"
                   className="input"
                 />
@@ -287,6 +292,7 @@ export function DocumentationPage() {
               <textarea
                 value={markdown}
                 onChange={(event) => setMarkdown(event.target.value)}
+                disabled={sending}
                 spellCheck={false}
                 aria-label="Markdown content"
                 className="min-h-[420px] w-full flex-1 resize-none bg-transparent font-mono text-xs leading-relaxed text-[#e6ebf3] outline-none lg:min-h-0"

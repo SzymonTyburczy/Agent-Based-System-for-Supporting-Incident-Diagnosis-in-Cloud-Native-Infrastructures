@@ -61,13 +61,22 @@ export function upsertSummary(list: IssueSummary[], next: IssueSummary): IssueSu
  */
 export function cacheReport(client: QueryClient, report: IssueDetail): void {
   client.setQueryData(reportKeys.detail(report.id), report);
-  client.setQueryData<IssueSummary[]>(reportKeys.list, (list) =>
-    upsertSummary(list ?? [], toIssueSummary(report)),
-  );
 
-  // Cold-start race: a list fetch already in flight would land afterwards and
-  // overwrite what we just wrote with a snapshot taken before it. Marking the
-  // list stale makes it refetch once that one settles.
+  // A list that never loaded (its first GET failed, is still in flight, or
+  // never ran) must not be seeded with this one report: that turns an error
+  // into a confident one-item list, which `staleTime: Infinity` then never
+  // refetches. Reset rather than invalidate: invalidating a first fetch still
+  // in flight just joins it, and its snapshot may predate this report.
+  const list = client.getQueryData<IssueSummary[]>(reportKeys.list);
+  if (list === undefined) {
+    void client.resetQueries({ queryKey: reportKeys.list });
+    return;
+  }
+  client.setQueryData(reportKeys.list, upsertSummary(list, toIssueSummary(report)));
+
+  // Refetch race (e.g. the resync after a reconnect): a list fetch already in
+  // flight would land afterwards and overwrite what we just wrote with a
+  // snapshot taken before it. Invalidating cancels it and fetches afresh.
   if (client.isFetching({ queryKey: reportKeys.list }) > 0) {
     void client.invalidateQueries({ queryKey: reportKeys.list });
   }

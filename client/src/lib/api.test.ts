@@ -211,7 +211,7 @@ describe("subscribeToReportEvents", () => {
     );
   });
 
-  it("distinguishes a transient reconnect from a dead stream", () => {
+  it("reports a browser-driven reconnect as connecting, not as a dead stream", () => {
     const { statuses, unsubscribe, source } = subscribe();
 
     expect(statuses).toEqual(["connecting"]);
@@ -222,13 +222,97 @@ describe("subscribeToReportEvents", () => {
     source.readyState = FakeEventSource.CONNECTING;
     source.onerror?.();
     expect(statuses.at(-1)).toBe("connecting");
-
-    source.readyState = FakeEventSource.CLOSED;
-    source.onerror?.();
-    expect(statuses.at(-1)).toBe("offline");
+    // EventSource is retrying this one itself — replacing it would double up.
+    expect(source.closed).toBe(false);
 
     unsubscribe();
     expect(source.closed).toBe(true);
+  });
+
+  describe("once the browser gives up (CLOSED)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Fails the current source for good and checks its replacement arrives after exactly `delayMs`. */
+    function expectReconnectAfter(delayMs: number) {
+      const dead = FakeEventSource.last!;
+      dead.readyState = FakeEventSource.CLOSED;
+      dead.onerror?.();
+      expect(dead.closed).toBe(true);
+
+      vi.advanceTimersByTime(delayMs - 1);
+      expect(FakeEventSource.last).toBe(dead);
+      vi.advanceTimersByTime(1);
+      expect(FakeEventSource.last).not.toBe(dead);
+    }
+
+    it("reports offline while closed, then opens a fresh EventSource after a backoff", () => {
+      const { reports, statuses } = subscribe();
+      const dead = FakeEventSource.last!;
+      dead.onopen?.();
+
+      // A dead stream (wrong token, wrong base URL) must still read as
+      // offline rather than as an endless "Reconnecting…".
+      dead.readyState = FakeEventSource.CLOSED;
+      dead.onerror?.();
+      expect(statuses.at(-1)).toBe("offline");
+
+      // Regression: a 502 from nginx while agent-core restarted left the
+      // stream closed until a manual reload.
+      vi.advanceTimersByTime(1_000);
+      const replacement = FakeEventSource.last!;
+      expect(replacement).not.toBe(dead);
+      expect(statuses.at(-1)).toBe("connecting");
+
+      replacement.onopen?.();
+      expect(statuses.at(-1)).toBe("live");
+      replacement.emit("report_created", JSON.stringify(rawDetail));
+      expect(reports).toHaveLength(1);
+    });
+
+    it("doubles the backoff on each failure, capped at 30s", () => {
+      subscribe();
+
+      for (const delayMs of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]) {
+        expectReconnectAfter(delayMs);
+      }
+    });
+
+    it("resets the backoff after a successful open", () => {
+      subscribe();
+      expectReconnectAfter(1_000);
+      expectReconnectAfter(2_000);
+
+      FakeEventSource.last!.onopen?.();
+
+      expectReconnectAfter(1_000);
+    });
+
+    it("unsubscribe cancels a pending reconnect", () => {
+      const { unsubscribe, source } = subscribe();
+      source.readyState = FakeEventSource.CLOSED;
+      source.onerror?.();
+
+      unsubscribe();
+      vi.advanceTimersByTime(60_000);
+
+      expect(FakeEventSource.last).toBe(source);
+    });
+
+    it("unsubscribe closes the replacement, not just the original source", () => {
+      const { unsubscribe } = subscribe();
+      expectReconnectAfter(1_000);
+      const replacement = FakeEventSource.last!;
+
+      unsubscribe();
+
+      expect(replacement.closed).toBe(true);
+    });
   });
 
   it("accepts a relative base URL and carries a configured token", () => {

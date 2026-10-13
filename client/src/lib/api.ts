@@ -119,12 +119,17 @@ export interface ReportStreamHandlers {
   onStatus: (status: StreamStatus) => void;
 }
 
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+
 /**
  * Subscribes to agent-core's SSE stream. Returns an unsubscribe function.
  *
  * Connection problems are reported through `onStatus` rather than thrown:
- * this runs detached from any render, and EventSource retries on its own, so
- * a transient drop must not read as fatal.
+ * this runs detached from any render, and a transient drop must not read as
+ * fatal. EventSource only retries a dropped connection on its own; a reconnect
+ * answered with a non-200 (nginx's 502 while agent-core restarts) closes it
+ * for good, so that case is retried here.
  */
 export function subscribeToReportEvents(handlers: ReportStreamHandlers): () => void {
   const baseUrl = getAgentApiUrl();
@@ -141,9 +146,6 @@ export function subscribeToReportEvents(handlers: ReportStreamHandlers): () => v
     handlers.onStatus("offline");
     return () => {};
   }
-
-  handlers.onStatus("connecting");
-  const source = new EventSource(url);
 
   const handle = (kind: string) => (event: MessageEvent<string>) => {
     let payload: unknown;
@@ -167,13 +169,40 @@ export function subscribeToReportEvents(handlers: ReportStreamHandlers): () => v
     handlers.onReport(result.value);
   };
 
-  source.addEventListener("report_created", handle("report_created"));
-  source.addEventListener("report_updated", handle("report_updated"));
-  source.onopen = () => handlers.onStatus("live");
-  // Branch on readyState: EventSource fires `error` on every ordinary
-  // reconnect too, and alarming on those would make a healthy stream look dead.
-  source.onerror = () =>
-    handlers.onStatus(source.readyState === EventSource.CLOSED ? "offline" : "connecting");
+  let source: EventSource;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryDelay = RECONNECT_BASE_MS;
 
-  return () => source.close();
+  const connect = () => {
+    handlers.onStatus("connecting");
+    const current = new EventSource(url);
+    source = current;
+    current.addEventListener("report_created", handle("report_created"));
+    current.addEventListener("report_updated", handle("report_updated"));
+    current.onopen = () => {
+      retryDelay = RECONNECT_BASE_MS;
+      handlers.onStatus("live");
+    };
+    current.onerror = () => {
+      // Branch on readyState: EventSource fires `error` on every ordinary
+      // reconnect too, and alarming on those would make a healthy stream look
+      // dead. A CLOSED source is offline until the replacement below opens,
+      // which on a wrong token or base URL it never does.
+      if (current.readyState !== EventSource.CLOSED) {
+        handlers.onStatus("connecting");
+        return;
+      }
+      handlers.onStatus("offline");
+      current.close();
+      retryTimer = setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, RECONNECT_MAX_MS);
+    };
+  };
+
+  connect();
+
+  return () => {
+    clearTimeout(retryTimer);
+    source.close();
+  };
 }

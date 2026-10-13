@@ -105,12 +105,12 @@ for a single investigation. Running both modes may duplicate diagnoses.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/alerts/webhook` | Accept Alertmanager payloads; returns `queued` or `ignored` |
+| POST | `/alerts/webhook` | Accept Alertmanager payloads; returns `queued` or `ignored`; 503 while 100 investigations are already waiting |
 | GET | `/healthz` | HTTP availability check, not a complete dependency check |
 | GET | `/reports` | List reports; optional `status=pending` or `status=resolved` filter |
 | GET | `/reports/{id}` | Read a report, including Markdown content |
 | PATCH | `/reports/{id}` | Set status with `{"status":"resolved"}` or `{"status":"pending"}` |
-| GET | `/reports/stream` | Intended SSE feed; see the route-ordering limitation in the testing guide |
+| GET | `/reports/stream` | SSE feed of `report_created` and `report_updated` events |
 
 Use one worker and one replica: the queue and SSE broadcaster are in process memory.
 Pending investigations do not survive a restart. Mount persistent storage for reports.

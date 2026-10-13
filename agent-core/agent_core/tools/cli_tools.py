@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any
 
 from agent_core.tools.base import Tool, ToolResult
@@ -33,6 +34,41 @@ DEFAULT_TIMEOUT_SECONDS = 15
 # Fallback safety net for tools that return plain text rather than JSON
 # (e.g. `kubectl get pods -o wide`), which is not filtered field-by-field.
 MAX_OUTPUT_CHARS = 4000
+
+# Kubernetes naming rules: namespaces are DNS-1123 labels, pod names are
+# DNS-1123 subdomains. Names come from the LLM (whose context includes
+# untrusted alert/log text) and go into kubectl's argv as positional
+# arguments, where anything starting with '-' would be parsed as an option
+# (e.g. `--server=...`). Rejecting everything that isn't a valid name keeps
+# each tool to its one fixed command (security note above, point 2).
+_DNS1123_LABEL = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
+_DNS1123_SUBDOMAIN = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*")
+_MAX_NAMESPACE_LENGTH = 63
+_MAX_POD_NAME_LENGTH = 253
+
+
+def _invalid_namespace(namespace: str) -> ToolResult | None:
+    if len(namespace) <= _MAX_NAMESPACE_LENGTH and _DNS1123_LABEL.fullmatch(namespace):
+        return None
+    return ToolResult(
+        success=False,
+        error=(
+            f"Namespace '{namespace}' is not a valid Kubernetes namespace name "
+            f"(lowercase letters, digits and '-', max {_MAX_NAMESPACE_LENGTH} characters)."
+        ),
+    )
+
+
+def _invalid_pod_name(pod_name: str) -> ToolResult | None:
+    if len(pod_name) <= _MAX_POD_NAME_LENGTH and _DNS1123_SUBDOMAIN.fullmatch(pod_name):
+        return None
+    return ToolResult(
+        success=False,
+        error=(
+            f"Pod name '{pod_name}' is not a valid Kubernetes pod name "
+            f"(lowercase letters, digits, '-' and '.', max {_MAX_POD_NAME_LENGTH} characters)."
+        ),
+    )
 
 
 def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
@@ -189,6 +225,9 @@ class KubectlGetPodsTool(Tool):
                     f"({sorted(self.allowed_namespaces)})."
                 ),
             )
+        invalid = _invalid_namespace(namespace)
+        if invalid is not None:
+            return invalid
         return await _run_kubectl("get", "pods", "-n", namespace, "-o", "wide")
 
 
@@ -221,6 +260,9 @@ class KubectlPodDiagnosticsTool(Tool):
                     f"({sorted(self.allowed_namespaces)})."
                 ),
             )
+        invalid = _invalid_namespace(namespace) or _invalid_pod_name(pod_name)
+        if invalid is not None:
+            return invalid
 
         pod_result = await _run_kubectl_json("get", "pod", pod_name, "-n", namespace, "-o", "json")
         if not pod_result.success:
