@@ -43,10 +43,10 @@ from agent_core.config import Settings, build_provider
 from agent_core.incident import (
     IncidentMeta,
     build_incident_description_from_webhook,
-    build_system_prompt,
     extract_incident_meta_from_webhook,
 )
 from agent_core.llm.base import LLMProvider
+from agent_core.prompting import build_system_prompt, validate_prompts
 from agent_core.report import generate_report, render_report_markdown, save_report
 from agent_core.report_events import ReportEventBroadcaster
 from agent_core.reports_api import ReportDetail, ReportSummary, StatusUpdate
@@ -149,7 +149,12 @@ async def _worker() -> None:
                 tools=state.registry,
                 config=AgentConfig(
                     max_iterations=state.settings.agent_max_iterations,
-                    system_prompt=build_system_prompt(),
+                    system_prompt=build_system_prompt(
+                        state.registry,
+                        environment=state.settings.agent_environment,
+                        max_turns=state.settings.agent_max_iterations,
+                        namespaces=state.settings.kubectl_namespaces(),
+                    ),
                 ),
             )
             started = time.monotonic()
@@ -201,6 +206,9 @@ async def _worker() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = _settings
+    # Before anything is opened, so a bad prompt file or AGENT_ENVIRONMENT
+    # fails the startup with a clear error instead of the first investigation.
+    validate_prompts(settings.agent_environment)
     state.settings = settings
     state.provider = build_provider(settings)
     state.reports_store = ReportsStore(settings.reports_db_path)

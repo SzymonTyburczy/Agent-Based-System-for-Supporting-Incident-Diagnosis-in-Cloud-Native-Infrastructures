@@ -8,6 +8,7 @@ import pytest
 
 from agent_core.citations import SourceLedger
 from agent_core.llm.base import LLMProvider, LLMResponse, Message, Role
+from agent_core.prompting import load
 from agent_core.report import (
     REPORT_SYSTEM_PROMPT,
     IncidentReport,
@@ -350,3 +351,9 @@ async def test_generate_report_caps_document_labels_in_the_key_list():
 def test_report_prompt_asks_for_markers_but_not_ids():
     assert "[KB1]" in REPORT_SYSTEM_PROMPT
     assert "doc_id" not in REPORT_SYSTEM_PROMPT
+
+
+def test_report_prompt_is_loaded_from_its_file_and_names_every_key():
+    assert REPORT_SYSTEM_PROMPT == load("report")
+    for key in ('"title"', '"summary"', '"error_sources"', '"problem"', '"remediations"'):
+        assert key in REPORT_SYSTEM_PROMPT

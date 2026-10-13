@@ -15,4 +15,5 @@ reports
 tests
 build
 dist
+# Root-level only; never widen to **/*.md (would drop agent_core prompt files).
 *.md

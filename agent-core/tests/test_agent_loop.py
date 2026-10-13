@@ -29,6 +29,15 @@ class FakeProvider(LLMProvider):
         return self._responses.pop(0)
 
 
+class FakeSearchTool(Tool):
+    name = "search_knowledge_base"
+    description = "Searches documentation"
+    parameters_schema = {"type": "object", "properties": {}}
+
+    async def execute(self) -> ToolResult:
+        return ToolResult(success=True, data=[])
+
+
 class EchoTool(Tool):
     name = "echo"
     description = "Returns the given text"
@@ -109,7 +118,40 @@ async def test_agent_loop_asks_for_wrapup_summary_when_iterations_exhausted():
     assert len(provider.calls) == 4  # 3 tool-call turns + 1 wrap-up call
     assert not provider.tools_per_call[-1]  # wrap-up call must offer no tools
     assert "reached the tool-call budget" in state.messages[-2].content
+    # No search tool registered, so no citation instructions either.
+    assert "[KBn]" not in state.messages[-2].content
+
+
+@pytest.mark.asyncio
+async def test_wrapup_keeps_kb_markers_when_the_search_tool_is_registered():
+    call = ToolCall(id="x", name="echo", arguments={"text": "loop"})
+    provider = FakeProvider(
+        [
+            LLMResponse(content=None, tool_calls=[call]),
+            LLMResponse(content="Likely cause: X [KB1].", tool_calls=[]),
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    registry.register(FakeSearchTool())
+
+    loop = AgentLoop(provider=provider, tools=registry, config=AgentConfig(max_iterations=1))
+    state = await loop.run("loop forever")
+
     assert "[KBn] source markers" in state.messages[-2].content
+
+
+@pytest.mark.asyncio
+async def test_default_system_prompt_is_composed_from_the_registry():
+    provider = FakeProvider([LLMResponse(content="answer", tool_calls=[])])
+    registry = ToolRegistry()
+    registry.register(FakeSearchTool())
+
+    state = await AgentLoop(provider=provider, tools=registry).run("diagnose")
+
+    [system] = [m for m in state.messages if m.role == Role.SYSTEM]
+    assert "never infer the current time" in system.content
+    assert "search_knowledge_base" in system.content
 
 
 @pytest.mark.asyncio

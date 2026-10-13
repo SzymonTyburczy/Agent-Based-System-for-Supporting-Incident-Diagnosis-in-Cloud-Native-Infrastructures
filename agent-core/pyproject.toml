@@ -29,3 +29,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["agent_core*"]
+# Keeps the prompt folders (e.g. environments/otel-demo) from being picked up
+# as namespace packages; they ship as package data below.
+namespaces = false
+
+[tool.setuptools.package-data]
+agent_core = ["prompts/*.md", "prompts/skills/*.md", "environments/*/*.md"]

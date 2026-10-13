@@ -10,6 +10,7 @@ from agent_core.incident import (
     extract_incident_meta_from_webhook,
     summarize_firing_alerts,
 )
+from agent_core.tools.rag import SearchKnowledgeBaseTool
 
 
 def test_build_system_prompt_includes_given_time():
@@ -22,10 +23,18 @@ def test_build_system_prompt_includes_given_time():
 
 
 def test_build_system_prompt_asks_for_cite_keys_not_document_ids():
-    prompt = build_system_prompt(now=datetime(2026, 7, 18, tzinfo=timezone.utc))
+    prompt = build_system_prompt(
+        [SearchKnowledgeBaseTool("http://rag")], now=datetime(2026, 7, 18, tzinfo=timezone.utc)
+    )
 
     assert "[KB1]" in prompt
     assert "doc_id" not in prompt
+
+
+def test_build_system_prompt_omits_citation_rules_without_the_search_tool():
+    prompt = build_system_prompt(now=datetime(2026, 7, 18, tzinfo=timezone.utc))
+
+    assert "[KB" not in prompt
 
 
 def test_build_system_prompt_defaults_to_real_current_time():
@@ -115,6 +124,37 @@ def test_webhook_builds_description_for_firing_payload():
     assert "Checkout error rate above 5%" in description
     assert "2026-07-18T10:00:00Z" in description
     assert "namespace=otel-demo" in description
+
+
+def test_webhook_description_is_alertmanager_text_not_tool_output():
+    payload = _webhook_payload()
+    payload["alerts"][0]["labels"]["prometheus"] = "monitoring/prom-stack"
+
+    description = build_incident_description_from_webhook(payload)
+
+    assert "Alertmanager" in description
+    assert "Grafana" not in description
+    assert "{'" not in description
+    assert "alertname=HighErrorRate, namespace=otel-demo" in description
+    assert "prometheus=" not in description
+
+
+def test_webhook_includes_the_decoded_alert_expression():
+    payload = _webhook_payload()
+    payload["alerts"][0]["generatorURL"] = "http://p/graph?g0.expr=up%3D%3D0&g0.tab=1"
+
+    description = build_incident_description_from_webhook(payload)
+
+    assert "expr: up==0" in description
+
+
+def test_webhook_appends_a_description_that_differs_from_the_summary():
+    payload = _webhook_payload()
+    payload["alerts"][0]["annotations"]["description"] = "5xx share of checkout RPCs is 7%"
+
+    description = build_incident_description_from_webhook(payload)
+
+    assert "Checkout error rate above 5% — 5xx share of checkout RPCs is 7%" in description
 
 
 def test_webhook_returns_none_for_resolved_status():

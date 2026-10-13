@@ -23,12 +23,9 @@ import time
 from agent_core.agent.loop import AgentConfig, AgentLoop
 from agent_core.citations import citation_scope
 from agent_core.config import Settings, build_provider
-from agent_core.incident import (
-    alerts_signature,
-    build_incident_description,
-    build_system_prompt,
-)
+from agent_core.incident import alerts_signature, build_incident_description
 from agent_core.llm.base import LLMProvider
+from agent_core.prompting import build_system_prompt, fallback_question, validate_prompts
 from agent_core.report import generate_report, save_report
 from agent_core.tools.cli_tools import KubectlGetPodsTool, KubectlPodDiagnosticsTool
 from agent_core.tools.mcp_client import MCPServerConnection
@@ -42,14 +39,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 for _noisy_logger in ("httpx", "openai", "openai._base_client", "mcp"):
     logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
 logger = logging.getLogger("demo")
-
-# Used only in single-shot mode (AGENT_RUN_ONCE=true) when no alert is
-# currently firing — see run_once().
-FALLBACK_QUESTION = (
-    "Customers are reporting errors during checkout in the OpenTelemetry "
-    "Demo Store (namespace otel-demo). Diagnose the root cause using the "
-    "available metrics, logs, and pod status."
-)
 
 
 async def build_registry(settings: Settings, mcp: MCPServerConnection) -> ToolRegistry:
@@ -97,7 +86,7 @@ async def fetch_firing_alerts_raw(tools: ToolRegistry, tool_name: str) -> str | 
 
     Always calls with operation="list" — this tool also supports
     create/update/delete, which this agent must never trigger itself
-    (see incident.SYSTEM_PROMPT_TEMPLATE guideline 6, and the
+    (see agent_core/prompts/skills/grafana.md, and the
     --disable-write note in .env.example).
     """
     if tool_name not in tools:
@@ -117,6 +106,9 @@ async def investigate(
     max_iterations: int,
     incident_description: str,
     report_output_dir: str,
+    *,
+    environment: str = "",
+    namespaces: set[str] | None = None,
 ) -> None:
     """Runs one full agent investigation, prints its transcript, and saves a
     structured JSON report (title, error sources, problem, remediations) to
@@ -127,7 +119,12 @@ async def investigate(
         tools=registry,
         config=AgentConfig(
             max_iterations=max_iterations,
-            system_prompt=build_system_prompt(),
+            system_prompt=build_system_prompt(
+                registry,
+                environment=environment,
+                max_turns=max_iterations,
+                namespaces=namespaces,
+            ),
         ),
     )
 
@@ -168,9 +165,10 @@ async def run_once(
     smoke test without waiting for a real alert to fire.
     """
     alerts_raw = await fetch_firing_alerts_raw(registry, alerting_tool_name)
-    incident_description = build_incident_description(alerts_raw, FALLBACK_QUESTION)
+    fallback = fallback_question(settings.agent_environment)
+    incident_description = build_incident_description(alerts_raw, fallback)
 
-    if incident_description == FALLBACK_QUESTION:
+    if incident_description == fallback:
         logger.info("No firing alerts found — falling back to the static example question.")
     else:
         logger.info("Firing alert(s) found — driving the investigation from live alerting data.")
@@ -181,6 +179,8 @@ async def run_once(
         settings.agent_max_iterations,
         incident_description,
         settings.report_output_dir,
+        environment=settings.agent_environment,
+        namespaces=settings.kubectl_namespaces(),
     )
 
 
@@ -211,13 +211,17 @@ async def run_continuously(
             logger.info("Firing alerts unchanged since the last investigation — skipping.")
         else:
             logger.info("New or changed firing alert(s) detected — starting an investigation.")
-            incident_description = build_incident_description(alerts_raw, FALLBACK_QUESTION)
+            incident_description = build_incident_description(
+                alerts_raw, fallback_question(settings.agent_environment)
+            )
             await investigate(
                 provider,
                 registry,
                 settings.agent_max_iterations,
                 incident_description,
                 settings.report_output_dir,
+                environment=settings.agent_environment,
+                namespaces=settings.kubectl_namespaces(),
             )
             last_signature = signature
 
@@ -226,6 +230,7 @@ async def run_continuously(
 
 async def main() -> None:
     settings = Settings()
+    validate_prompts(settings.agent_environment)
     provider = build_provider(settings)
     logger.info("LLM provider: %s", settings.llm_provider)
 
