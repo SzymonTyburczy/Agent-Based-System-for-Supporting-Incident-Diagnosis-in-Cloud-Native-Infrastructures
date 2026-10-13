@@ -43,6 +43,10 @@ class Settings(BaseSettings):
 
     agent_max_iterations: int = 12
 
+    # "" = generic prompt; a built-in name under agent_core/environments/; or a
+    # directory path (e.g. a mounted ConfigMap)
+    agent_environment: str = ""
+
     # Empty URL disables retrieval; a failed search never blocks agent startup.
     rag_api_url: str = ""
     rag_api_token: str | None = None

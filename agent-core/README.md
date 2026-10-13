@@ -59,6 +59,7 @@ See [.env.example](.env.example) for the full template and
 | `MCP_GRAFANA_TOOL_ALLOWLIST` | Limit available tools and the schemas sent to the LLM; keep the curated list as a starting point |
 | `KUBECTL_ALLOWED_NAMESPACES` | Limit namespaces used by kubectl; Kubernetes RBAC must also permit access |
 | `AGENT_MAX_ITERATIONS` | Investigation step budget |
+| `AGENT_ENVIRONMENT` | Infrastructure profile added to the prompt: `otel-demo`, a directory path, or empty for the generic prompt |
 | `REPORT_OUTPUT_DIR` / `REPORTS_DB_PATH` | JSON report directory and SQLite database path |
 | `WEBHOOK_SHARED_SECRET` | Bearer token for Alertmanager webhook requests |
 | `CLIENT_API_TOKEN` / `CLIENT_ALLOWED_ORIGINS` | Report API authentication and allowed browser origins |
@@ -66,6 +67,35 @@ See [.env.example](.env.example) for the full template and
 Run Grafana MCP with write tools disabled and use read-only Kubernetes permissions.
 Keep secrets out of Git. Container addresses, volume paths, and environment-variable
 handling are covered in [CONTAINERS.md](../docs/CONTAINERS.md).
+
+## Prompts, skills and environments
+
+All LLM-facing text is Markdown inside the package. `agent_core/prompts/` holds the
+generic text (`core.md`, `answer.md`, `wrapup.md`, `report.md`, `incident.md`,
+`fallback_question.md`) and `prompts/skills/` one file per tool group.
+`agent_core/environments/<name>/` holds infrastructure facts (`environment.md`, optional
+`fallback_question.md`). `agent_core/prompting.py` composes one system message per
+investigation: core, then the skills whose tools are registered, then the environment
+profile, then the answer format.
+
+`AGENT_ENVIRONMENT` is empty (generic prompt, logged as a warning), a built-in name
+(`otel-demo`) or a directory path. For your own profile in Kubernetes, run
+`kubectl create configmap agent-core-environment -n idar --from-file=./my-env`, mount it
+in the `agent-core` Deployment, set `AGENT_ENVIRONMENT` to the absolute mount path and
+run `kubectl rollout restart deployment/agent-core -n idar`. Files are read once per
+process, so later ConfigMap edits also need a restart.
+
+A skill is `prompts/skills/<name>.md` with front matter `requires_any: <tool>, ...`
+(base tool names, without the `grafana_` prefix); it is included when any listed tool is
+registered. Placeholders are `{{now}}`, `{{max_turns}}`, `{{namespaces}}` and
+`{{tool:<base name>}}`; a line naming an unregistered tool, or `{{namespaces}}` without
+a namespace allowlist, is dropped. Keep files to terse bullets with each rule in one file
+and no vendor-specific markup: the prompt is resent on every LLM call, and tests cap each
+skill at 120 words and the full prompt at the size of the old hand-written one. Startup
+and `docker build` fail on a missing file, bad front matter or an unknown placeholder;
+tests reject a `{{tool:...}}` name outside the production tool set.
+Skills are inlined rather than loaded on demand: the history is resent every turn anyway,
+and a skill-loading tool would cost schema tokens and iterations.
 
 ## Documentation retrieval (RAG)
 
@@ -77,8 +107,9 @@ Set `RAG_API_TOKEN` to the server's `IDAR_API_TOKEN` if authentication is enable
 An empty `RAG_API_URL` disables retrieval; the code default is empty.
 
 Both webhook and polling modes expose the read-only `search_knowledge_base` tool
-to the LLM. The prompt asks it to search relevant runbooks before concluding,
-verify them against telemetry and cite the passages it relies on (see
+to the LLM. The knowledge-base skill (included only when `search_knowledge_base` is
+registered) asks it to search once before concluding, verify hits against telemetry
+and cite the passages it relies on (see
 [Documentation citations](#documentation-citations)). Tool invocation and citation
 remain model-driven, not a guaranteed search on every incident. Retrieved text is
 reference data, not instructions for the agent.

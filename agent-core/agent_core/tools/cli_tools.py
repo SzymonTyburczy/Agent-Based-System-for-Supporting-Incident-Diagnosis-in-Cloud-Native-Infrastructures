@@ -205,7 +205,7 @@ class KubectlGetPodsTool(Tool):
         "properties": {
             "namespace": {
                 "type": "string",
-                "description": "Kubernetes namespace, e.g. 'otel-demo'",
+                "description": "Kubernetes namespace",
             }
         },
         "required": ["namespace"],
@@ -243,7 +243,7 @@ class KubectlPodDiagnosticsTool(Tool):
         "type": "object",
         "properties": {
             "namespace": {"type": "string"},
-            "pod_name": {"type": "string"},
+            "pod_name": {"type": "string", "description": "Exact pod name from kubectl_get_pods"},
         },
         "required": ["namespace", "pod_name"],
     }

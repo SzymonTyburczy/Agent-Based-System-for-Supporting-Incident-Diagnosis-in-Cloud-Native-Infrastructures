@@ -14,23 +14,17 @@ from dataclasses import dataclass
 
 from agent_core.agent.state import ConversationState
 from agent_core.llm.base import LLMProvider
+from agent_core.prompting import build_system_prompt, build_wrapup_message
 from agent_core.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_SYSTEM_PROMPT = (
-    "You are an agent that supports incident diagnosis in cloud-native "
-    "infrastructure. You have access to diagnostic tools (telemetry, CLI). "
-    "Your role is decision support only — never perform actions that modify "
-    "the infrastructure. If you need data, call the relevant tool instead of "
-    "guessing."
-)
 
 
 @dataclass
 class AgentConfig:
     max_iterations: int = 8
-    system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    # None = a generic prompt composed from the loop's own tool registry.
+    system_prompt: str | None = None
 
 
 class AgentLoop:
@@ -47,7 +41,10 @@ class AgentLoop:
     async def run(self, user_message: str, state: ConversationState | None = None) -> ConversationState:
         state = state or ConversationState()
         if not state.has_system_prompt():
-            state.add_system(self.config.system_prompt)
+            state.add_system(
+                self.config.system_prompt
+                or build_system_prompt(self.tools, max_turns=self.config.max_iterations)
+            )
         state.add_user(user_message)
 
         tool_schemas = self.tools.schemas()
@@ -120,14 +117,7 @@ class AgentLoop:
             self.config.max_iterations,
             time.monotonic() - started,
         )
-        state.add_user(
-            "You have reached the tool-call budget for this investigation. "
-            "Do not call any more tools. Based only on the information "
-            "already gathered above, give your best-effort diagnosis: "
-            "probable root cause and suggested next steps, and note "
-            "explicitly what remains uncertain or unverified. Keep any "
-            "[KBn] source markers next to the statements they support."
-        )
+        state.add_user(build_wrapup_message(self.tools))
         try:
             wrapup = await self.provider.complete(state.messages, tools=None)
         except Exception as exc:

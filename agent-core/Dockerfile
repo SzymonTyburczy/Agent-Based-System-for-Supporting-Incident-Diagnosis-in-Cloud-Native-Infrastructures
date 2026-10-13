@@ -37,6 +37,8 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /build/kubectl /usr/local/bin/kubectl
 WORKDIR /app
 COPY main.py webhook_server.py ./
+# Fails the build when prompt files are missing from the installed package (package-data).
+RUN python -c "from agent_core.prompting import validate_prompts; validate_prompts('otel-demo')"
 USER 10001:10001
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

@@ -22,31 +22,11 @@ from typing import Any
 
 from agent_core.citations import SourceLedger, resolve_report_citations
 from agent_core.llm.base import LLMProvider, Message, Role
+from agent_core.prompting import load
 
 logger = logging.getLogger(__name__)
 
-REPORT_SYSTEM_PROMPT = (
-    "You will be given a diagnostic report written in free text. Convert it "
-    "into a JSON object with EXACTLY these keys, and nothing else:\n"
-    '- "title": a short, one-line summary of the incident (max ~10 words).\n'
-    '- "summary": one sentence (max ~25 words) a person could read in a '
-    "list view to know what happened, without opening the full report.\n"
-    '- "error_sources": a list of strings identifying where the evidence '
-    "for the problem was found (e.g. specific pods, log queries, metrics, "
-    "dashboards).\n"
-    '- "problem": a concise paragraph describing what is actually wrong.\n'
-    '- "remediations": a list of strings, each one concrete suggested next '
-    "step.\n"
-    "The report may mark statements taken from documentation with source "
-    "markers such as [KB1]. Copy each marker verbatim right after the "
-    "statement it supports, in whichever field that statement lands. Never "
-    'put markers in "title" or "summary", and never invent a marker the '
-    "report does not contain.\n"
-    "Respond with ONLY the JSON object — no markdown code fences, no "
-    "commentary before or after it. If the original report says the cause "
-    "is uncertain, reflect that honestly in \"problem\" and \"summary\" "
-    "rather than inventing a confident answer."
-)
+REPORT_SYSTEM_PROMPT = load("report")
 
 # Fallback when the model omits "summary" (or structuring fails outright,
 # see parse_report_json): truncated so a list view never has to render an
