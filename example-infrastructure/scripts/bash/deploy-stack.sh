@@ -45,8 +45,8 @@ echo " -> Deploying Grafana MCP Server (read-only)..."
 helm upgrade --install grafana-mcp grafana-community/grafana-mcp -n observability -f "${VALUES_DIR}/grafana-mcp-values.yaml"
 
 # 4. Deploy OpenTelemetry Demo application
-echo -e "\n[4/5] Deploying OpenTelemetry Demo e-commerce application..."
-helm upgrade --install otel-demo open-telemetry/opentelemetry-demo -n otel-demo -f "${VALUES_DIR}/otel-demo-values.yaml"
+echo -e "\n[4/5] Deploying OpenTelemetry Demo e-commerce application (pinned to v0.42.4)..."
+helm upgrade --install otel-demo open-telemetry/opentelemetry-demo -n otel-demo --version 0.42.4 -f "${VALUES_DIR}/otel-demo-values.yaml"
 
 # 4.5 Deploy custom thesis alerts
 echo -e "\n[4.5/5] Deploying Custom Prometheus Alerts..."

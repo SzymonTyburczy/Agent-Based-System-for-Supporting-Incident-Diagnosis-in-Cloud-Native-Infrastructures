@@ -50,8 +50,8 @@ Write-Host " -> Deploying Grafana MCP Server (read-only)..."
 helm upgrade --install grafana-mcp grafana-community/grafana-mcp -n observability -f "$ValuesDir\grafana-mcp-values.yaml"
 
 # 4. Deploy OpenTelemetry Demo application in 'otel-demo' namespace
-Write-Host "`n[4/5] Deploying OpenTelemetry Demo e-commerce application..." -ForegroundColor Yellow
-helm upgrade --install otel-demo open-telemetry/opentelemetry-demo -n otel-demo -f "$ValuesDir\otel-demo-values.yaml"
+Write-Host "`n[4/5] Deploying OpenTelemetry Demo e-commerce application (pinned to v0.42.4)..." -ForegroundColor Yellow
+helm upgrade --install otel-demo open-telemetry/opentelemetry-demo -n otel-demo --version 0.42.4 -f "$ValuesDir\otel-demo-values.yaml"
 
 # 4.5 Deploy custom thesis alerts
 Write-Host "`n[4.5/5] Deploying Custom Prometheus Alerts..." -ForegroundColor Yellow
