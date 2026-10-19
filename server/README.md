@@ -9,7 +9,8 @@ Where it fits in the system: [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md).
 
 - [uv](https://docs.astral.sh/uv/) (it fetches Python 3.12 itself)
 - [Ollama](https://ollama.com/) with the embedding model:
-  `ollama pull qwen3-embedding:0.6b`
+  `ollama pull qwen3-embedding:0.6b`, or an embedding API key instead
+  (see [Ollama or an API key](#ollama-or-an-api-key))
 - Docker (Qdrant through `docker compose`)
 
 ## Start
@@ -34,6 +35,23 @@ it to `.env` to override the defaults; in production
 | `IDAR_CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | panel origins (Vite dev, Nginx container); empty = any |
 | `IDAR_API_TOKEN` | empty | when set, `/api/documents*` and `/api/search` require `Authorization: Bearer <token>` |
 | `IDAR_STARTUP_RETRIES` / `IDAR_STARTUP_RETRY_SECONDS` | `30` / `2` | how long to wait for Ollama and Qdrant at startup (containers start in parallel) |
+| `IDAR_EMBEDDING_API_KEY` | empty | when set, embeddings come from an OpenAI-compatible API instead of Ollama |
+| `IDAR_EMBEDDING_API_URL` / `IDAR_EMBEDDING_API_MODEL` | `https://api.openai.com/v1` / `text-embedding-3-small` | the API and the model used with the key |
+
+### Ollama or an API key
+
+Without `IDAR_EMBEDDING_API_KEY` the server embeds with Ollama
+(`IDAR_EMBEDDING_MODEL` at `IDAR_OLLAMA_URL`). With the key it calls
+`POST {IDAR_EMBEDDING_API_URL}/embeddings` instead: OpenAI by default, or any
+provider that serves the same API under another URL. Ollama is then not needed,
+and no query instruction is sent, because models such as `text-embedding-3` take
+none.
+
+Every model has its own Qdrant collection behind the `kb_active` alias, so adding
+or removing the key switches to the documents ingested with that model; send the
+documents again after switching. `/api/health` reports the active model; in
+Kubernetes its test embedding, run by the readiness probe, becomes a small API
+call every 20 s.
 
 ## API
 

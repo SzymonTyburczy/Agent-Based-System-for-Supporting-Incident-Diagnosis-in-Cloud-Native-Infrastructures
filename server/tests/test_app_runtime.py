@@ -1,4 +1,4 @@
-"""Zachowania potrzebne w kontenerze: sondy, CORS z env, token, retry startu."""
+"""What the container relies on: probes, CORS from env, the token, startup retries."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +33,16 @@ def test_cors_origins_parse_from_comma_separated_env():
 
     assert listed.cors_origin_list() == ["http://a:1", "http://b:2"]
     assert blank.cors_origin_list() == ["*"]
+
+
+def test_an_env_file_from_before_the_api_key_still_loads(tmp_path, monkeypatch):
+    monkeypatch.delenv("IDAR_EMBEDDING_API_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "IDAR_EMBEDDING_PROVIDER=ollama\nIDAR_EMBEDDING_API_KEY=from-the-file\n", encoding="utf-8"
+    )
+
+    assert Settings(_env_file=env_file).embedding_api_key == "from-the-file"
 
 
 @pytest.mark.parametrize("override", [{"chunk_max_tokens": 0}, {"chunk_overlap_tokens": -1}])

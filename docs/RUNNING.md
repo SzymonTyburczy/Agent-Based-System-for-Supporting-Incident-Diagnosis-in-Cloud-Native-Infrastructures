@@ -203,6 +203,8 @@ All optional; the defaults match step 4.
 | Variable | Default | Purpose |
 |---|---|---|
 | `IDAR_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Ollama embedding model; `qwen3-embedding:8b` is the target. Each model gets its own Qdrant collection behind the `kb_active` alias, so switching means re-ingesting documents |
+| `IDAR_EMBEDDING_API_KEY` | empty | when set, embeddings come from an OpenAI-compatible API instead of Ollama (a different model, so its own collection too) |
+| `IDAR_EMBEDDING_API_URL` / `IDAR_EMBEDDING_API_MODEL` | `https://api.openai.com/v1` / `text-embedding-3-small` | the API and the model used with the key |
 | `IDAR_OLLAMA_URL` | `http://localhost:11434` | Ollama address (`http://host.docker.internal:11434` from a container) |
 | `IDAR_QDRANT_URL` | `http://localhost:6333` | Qdrant address (`http://qdrant:6333` on the compose network) |
 | `IDAR_QUERY_INSTRUCTION` | English retrieval instruction | prefix added to queries only, never to documents (Qwen3-Embedding asymmetry) |
