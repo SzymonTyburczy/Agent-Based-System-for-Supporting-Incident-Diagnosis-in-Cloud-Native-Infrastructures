@@ -11,9 +11,18 @@
 # Image: build and load it as described in k8s/README.md
 # (docker build -t idar-rag-server:local ./server).
 #
-# Optional Secret: when it exists, /api/documents and /api/search require
-# "Authorization: Bearer <token>":
-#   kubectl create secret generic rag-server-secrets -n idar --from-literal=IDAR_API_TOKEN=...
+# Optional Secret rag-server-secrets, with either key or both:
+#   IDAR_API_TOKEN          /api/documents and /api/search then require
+#                           "Authorization: Bearer <token>";
+#   IDAR_EMBEDDING_API_KEY  embeddings then come from an OpenAI-compatible API
+#                           (OpenAI's text-embedding-3-small unless
+#                           IDAR_EMBEDDING_API_URL / _MODEL say otherwise) instead
+#                           of Ollama, which this Pod then never calls. The
+#                           readiness probe's test embedding becomes a small API
+#                           call every 20 s, and the knowledge base switches to
+#                           that model's collection: ingest the documents again.
+#   kubectl create secret generic rag-server-secrets -n idar \
+#     --from-literal=IDAR_API_TOKEN=... --from-literal=IDAR_EMBEDDING_API_KEY=...
 #
 # Apply after qdrant.yaml and ollama.yaml:  kubectl apply -f k8s/rag-server.yaml
 apiVersion: v1

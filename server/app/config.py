@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,15 +7,25 @@ class Settings(BaseSettings):
         env_prefix="IDAR_",
         env_file=".env",
         env_file_encoding="utf-8",
+        # A .env copied from an older .env.example still sets
+        # IDAR_EMBEDDING_PROVIDER, which the API key below replaced.
+        extra="ignore",
     )
 
-    embedding_provider: Literal["ollama"] = "ollama"
+    # Ollama, used when no embedding API key is set.
     embedding_model: str = "qwen3-embedding:0.6b"
     ollama_url: str = "http://localhost:11434"
+    # Setting the key switches embeddings to an OpenAI-compatible API (OpenAI by
+    # default). The model gets its own collection, so switching either way shows
+    # the documents ingested with that model, and only those.
+    embedding_api_key: str = ""
+    embedding_api_url: str = "https://api.openai.com/v1"
+    embedding_api_model: str = "text-embedding-3-small"
     qdrant_url: str = "http://localhost:6333"
     collection_alias: str = "kb_active"
     # The instruction is in English whatever the language of the query, as the
-    # Qwen3-Embedding authors recommend.
+    # Qwen3-Embedding authors recommend. Only the Ollama model gets it: API models
+    # such as text-embedding-3 take no instruction.
     query_instruction: str = (
         "Given a technical question about cloud-native infrastructure incidents, "
         "retrieve relevant documentation passages that help diagnose or resolve the issue"

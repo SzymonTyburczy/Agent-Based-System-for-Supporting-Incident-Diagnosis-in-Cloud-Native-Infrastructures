@@ -93,7 +93,7 @@ the ones your configuration needs:
 | Secret | Keys | When |
 | --- | --- | --- |
 | `agent-core-secrets` | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`, `WEBHOOK_SHARED_SECRET`, `CLIENT_API_TOKEN`, `RAG_API_TOKEN` | the default `LLM_PROVIDER=openai` needs its key; `RAG_API_TOKEN` must match `IDAR_API_TOKEN` when RAG authentication is enabled |
-| `rag-server-secrets` | `IDAR_API_TOKEN` | to require a bearer token on the RAG API |
+| `rag-server-secrets` | `IDAR_API_TOKEN`, `IDAR_EMBEDDING_API_KEY` | the token requires a bearer token on the RAG API; the key moves embeddings from Ollama to an OpenAI-compatible API (see `rag-server.yaml`) |
 | `doc-converter-secrets` | `API_TOKEN` | to require a bearer token on `/convert` |
 
 ```bash
