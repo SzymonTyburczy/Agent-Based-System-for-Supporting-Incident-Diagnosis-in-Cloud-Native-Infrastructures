@@ -5,9 +5,9 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 # Public, browser-accessible absolute URL; Vite embeds it at build time.
-ARG VITE_AGENT_API_URL=http://localhost:8080
-ARG VITE_CONVERTER_URL=http://localhost:5001
-ARG VITE_RAG_API_URL=http://localhost:8100
+ARG VITE_AGENT_API_URL=/api/agent
+ARG VITE_CONVERTER_URL=/api/converter
+ARG VITE_RAG_API_URL=/api/rag
 ENV VITE_AGENT_API_URL=${VITE_AGENT_API_URL} \
     VITE_CONVERTER_URL=${VITE_CONVERTER_URL} \
     VITE_RAG_API_URL=${VITE_RAG_API_URL}

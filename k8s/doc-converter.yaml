@@ -84,7 +84,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: doc-converter
-          image: wpawlina2137/idar-doc-converter:v0.1.0
+          image: wpawlina2137/idar-doc-converter:v0.2.0
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
