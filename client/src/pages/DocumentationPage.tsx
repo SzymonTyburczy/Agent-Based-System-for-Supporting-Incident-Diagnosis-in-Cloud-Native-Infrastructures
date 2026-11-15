@@ -1,149 +1,109 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { Check, Loader2, Send } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { MarkdownPreview } from "../components/MarkdownPreview";
-import { UploadZone, type UploadStatus } from "../components/UploadZone";
-import {
-  buildPayload,
-  convertToMarkdown,
-  PAYLOAD_DATE_FORMAT,
-  type ConversionEngine,
-} from "../lib/converter";
-import { documentKeys } from "../lib/documentsCache";
-import { ingestDocument } from "../lib/knowledgeBase";
-import { getDefaultAuthor } from "../lib/settings";
-import {
-  clearDocDraft,
-  loadDocDraft,
-  useDocDraftPersistence,
-  type DocDraft,
-} from "../hooks/useDocDraft";
-import { useTransientFlag } from "../hooks/useTransientFlag";
-import type { DocumentPayload, SourceFormat } from "../lib/types";
+import { UploadZone } from "../components/UploadZone";
+import { UploadList } from "../components/UploadList";
+import { PAYLOAD_DATE_FORMAT } from "../lib/converter";
+import { isEditable, type UploadItem } from "../lib/uploadQueue";
+import { useUploadQueue } from "../hooks/uploadQueueContext";
 
 type RightTab = "preview" | "edit";
 
+/** The explicit selection, else the first document awaiting approval, else the newest. */
+function pickSelected(items: readonly UploadItem[], selectedId: string | null): UploadItem | null {
+  return (
+    items.find((item) => item.id === selectedId) ??
+    items.find((item) => item.stage === "ready") ??
+    items.at(-1) ??
+    null
+  );
+}
+
+function Placeholder({ children, busy = false }: { children: ReactNode; busy?: boolean }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-[var(--color-muted)]">
+      {busy && <Loader2 className="h-6 w-6 animate-spin text-[var(--color-brand)]" />}
+      <div>{children}</div>
+    </div>
+  );
+}
+
 export function DocumentationPage() {
-  const queryClient = useQueryClient();
-  const [draft] = useState(() => loadDocDraft());
-  const [status, setStatus] = useState<UploadStatus>(draft?.status ?? "idle");
-  const [fileName, setFileName] = useState(draft?.fileName ?? "");
-  const [sourceFormat, setSourceFormat] = useState<SourceFormat | null>(
-    draft?.sourceFormat ?? null,
-  );
-  const [engine, setEngine] = useState<ConversionEngine | null>(draft?.engine ?? null);
-  const [markdown, setMarkdown] = useState(draft?.markdown ?? "");
-  // `||` (not `??`): an empty author persisted in the draft must not shadow
-  // the default author configured later in Settings.
-  const [author, setAuthor] = useState(() => draft?.author || getDefaultAuthor());
-  const [date, setDate] = useState<Date>(() =>
-    draft?.dateISO ? new Date(draft.dateISO) : new Date(),
-  );
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [sending, setSending] = useState(false);
+  const { queue, state } = useUploadQueue();
+  const { items, author, date } = state;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>("preview");
-  const { flag: sent, trigger: markSent, clear: clearSent } = useTransientFlag(2500);
-  // Guards against a slow conversion resolving after a newer one started.
-  const conversionId = useRef(0);
+  const [rejections, setRejections] = useState<string[]>([]);
 
-  const currentDraft: DocDraft = useMemo(
-    () => ({
-      status: status === "ready" ? "ready" : "idle",
-      fileName,
-      sourceFormat,
-      engine,
-      markdown,
-      author,
-      dateISO: date.toISOString(),
-    }),
-    [status, fileName, sourceFormat, engine, markdown, author, date],
-  );
-  useDocDraftPersistence(currentDraft);
+  const selected = pickSelected(items, selectedId);
+  const authorMissing = !author.trim();
+  const waitingForAuthor = items.filter((item) => item.stage === "approved").length;
 
-  const handleFile = useCallback(
-    async (file: File) => {
-      const id = ++conversionId.current;
-      setError("");
-      setNotice("");
-      clearSent();
-      setStatus("converting");
-      setFileName(file.name);
-      // Drop the previous file's result up front, so a failure never shows the
-      // old content under the new file's name.
-      setMarkdown("");
-      setSourceFormat(null);
-      setEngine(null);
-      try {
-        const result = await convertToMarkdown(file);
-        if (id !== conversionId.current) return;
-        setMarkdown(result.markdown);
-        setSourceFormat(result.sourceFormat);
-        setEngine(result.engine);
-        setStatus("ready");
-        setRightTab("preview");
-      } catch (err) {
-        if (id !== conversionId.current) return;
-        setStatus("error");
-        setError(err instanceof Error ? err.message : "Failed to process the file.");
-      }
-    },
-    [clearSent],
-  );
+  const addFiles = useCallback((files: File[]) => queue.add(files), [queue]);
 
-  const payload: DocumentPayload = useMemo(
-    () => buildPayload({ markdown, author, date, fileName }),
-    [markdown, author, date, fileName],
-  );
-
-  const reset = () => {
-    conversionId.current++;
-    setStatus("idle");
-    setFileName("");
-    setSourceFormat(null);
-    setEngine(null);
-    setMarkdown("");
-    setError("");
-    setNotice("");
-    setDate(new Date());
-    clearSent();
-    clearDocDraft();
+  const select = (id: string) => {
+    setSelectedId(id);
+    setRightTab("preview");
   };
 
-  const canSubmit =
-    status === "ready" && markdown.trim().length > 0 && author.trim().length > 0 && !sending;
-
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-    setSending(true);
-    setError("");
-    setNotice("");
-    try {
-      const result = await ingestDocument(payload);
-      // `all`, not just the list: re-sending a document added before the
-      // server kept originals and file names upgrades it in place, so a cached
-      // copy of it may be stale too.
-      void queryClient.invalidateQueries({ queryKey: documentKeys.all });
-      // The form is locked while sending, so reset() only clears what was just
-      // sent — never an edit or a new file made while the request was in flight.
-      // Order matters: reset() clears the notice, so the message is set after it.
-      reset();
-      const fragments = `${result.chunkCount} fragment${result.chunkCount === 1 ? "" : "s"}`;
-      setNotice(
-        result.alreadyExists
-          ? `"${result.title}" is already in the knowledge base — identical content, nothing re-indexed.`
-          : `"${result.title}" added to the knowledge base (${fragments}).`,
+  const renderBody = (item: UploadItem) => {
+    if (item.markdown) {
+      if (rightTab === "edit") {
+        return (
+          // Edits go straight into the queue, so what you see here is what gets
+          // sent — and the queue keeps them in localStorage across a refresh.
+          // This is the repair path for the one thing the converter gets wrong:
+          // multi-line YAML and code blocks arrive flattened onto one line.
+          <textarea
+            value={item.markdown}
+            onChange={(event) => queue.editMarkdown(item.id, event.target.value)}
+            readOnly={!isEditable(item)}
+            spellCheck={false}
+            aria-label="Markdown content"
+            className="min-h-[420px] w-full flex-1 resize-none bg-transparent font-mono text-xs leading-relaxed text-[#e6ebf3] outline-none read-only:opacity-70 lg:min-h-0"
+          />
+        );
+      }
+      // .txt is not Markdown — rendering it as such would invent structure the
+      // author never wrote.
+      return item.sourceFormat === "text" ? (
+        <pre className="text-sm leading-relaxed break-words whitespace-pre-wrap text-[#e6ebf3]">
+          {item.markdown}
+        </pre>
+      ) : (
+        <MarkdownPreview content={item.markdown} />
       );
-      markSent();
-    } catch (err) {
-      // The draft stays on screen on failure: the work of converting and
-      // editing the document must survive a knowledge base that is down.
-      setError(err instanceof Error ? err.message : "Failed to send the document.");
-    } finally {
-      setSending(false);
+    }
+    switch (item.stage) {
+      case "queued":
+        return (
+          <Placeholder>Waiting for the converter — PDFs are converted one at a time.</Placeholder>
+        );
+      case "converting":
+        return <Placeholder busy>Converting {item.fileName}…</Placeholder>;
+      case "error":
+        return <Placeholder>{item.error || "Processing failed."}</Placeholder>;
+      case "done":
+        // Restored after a reload: the text was not kept, it is in the knowledge base.
+        return (
+          <Placeholder>
+            Sent to the knowledge base.{" "}
+            {item.result && (
+              <Link
+                to={`/knowledge-base?doc=${encodeURIComponent(item.result.docId)}`}
+                className="text-[var(--color-brand)] hover:underline"
+              >
+                Open it there
+              </Link>
+            )}
+          </Placeholder>
+        );
+      default:
+        return <Placeholder>Nothing to show yet.</Placeholder>;
     }
   };
 
@@ -152,45 +112,32 @@ export function DocumentationPage() {
       <div className="shrink-0">
         <PageHeader
           title="Documentation"
-          description="Add documentation (PDF or Markdown) to the RAG knowledge base. PDFs are converted to Markdown locally, by the doc-converter service."
+          description="Add documentation (PDF or Markdown) to the RAG knowledge base. Markdown and text files are sent right away. PDFs are converted to Markdown locally, by the doc-converter service, and wait for your review and approval."
         />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
-        {/* Left column: upload + form (fixed, non-scrolling) */}
+        {/* Left column: upload, metadata, queue */}
         <div className="space-y-4 lg:w-1/2">
-          <UploadZone
-            status={status}
-            fileName={fileName}
-            sourceFormat={sourceFormat}
-            engine={engine}
-            onFile={(file) => void handleFile(file)}
-            onReject={setError}
-            onReset={reset}
-            disabled={sending}
-          />
+          <UploadZone onFiles={addFiles} onReject={setRejections} />
 
-          {error && (
+          {rejections.length > 0 && (
             <div
               role="alert"
               className="rounded-xl border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
             >
-              {error}
-            </div>
-          )}
-
-          {notice && (
-            <div
-              role="status"
-              className="rounded-xl border border-[var(--color-success)]/40 bg-[var(--color-success)]/10 px-4 py-3 text-sm text-[var(--color-success)]"
-            >
-              {notice}
+              {rejections.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
             </div>
           )}
 
           <div className="card p-5">
-            <h3 className="mb-4 text-sm font-semibold text-white">Document metadata</h3>
-            <div className="space-y-4">
+            <h3 className="mb-1 text-sm font-semibold text-white">Document metadata</h3>
+            <p className="mb-4 text-xs text-[var(--color-muted)]">
+              Applied to each document at the moment it is sent.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label
                   htmlFor="doc-author"
@@ -201,8 +148,7 @@ export function DocumentationPage() {
                 <input
                   id="doc-author"
                   value={author}
-                  onChange={(e) => setAuthor(e.target.value)}
-                  disabled={sending}
+                  onChange={(e) => queue.setAuthor(e.target.value)}
                   placeholder="Author name"
                   className="input"
                 />
@@ -217,41 +163,38 @@ export function DocumentationPage() {
                 <DatePicker
                   id="doc-date"
                   selected={date}
-                  onChange={(value: Date | null) => value && setDate(value)}
+                  onChange={(value: Date | null) => value && queue.setDate(value)}
                   dateFormat={PAYLOAD_DATE_FORMAT}
-                  disabled={sending}
                   wrapperClassName="w-full"
                   className="input"
                 />
               </div>
             </div>
-
-            <button
-              onClick={() => void handleSubmit()}
-              disabled={!canSubmit && !sent}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-2)] px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {sending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Sending…
-                </>
-              ) : sent ? (
-                <>
-                  <Check className="h-4 w-4" /> Sent
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4" /> Send
-                </>
-              )}
-            </button>
+            {authorMissing && waitingForAuthor > 0 && (
+              <p role="status" className="mt-3 text-xs text-[var(--color-warning)]">
+                {waitingForAuthor} document{waitingForAuthor === 1 ? " is" : "s are"} waiting for an
+                author before {waitingForAuthor === 1 ? "it is" : "they are"} sent.
+              </p>
+            )}
           </div>
+
+          <UploadList
+            items={items}
+            selectedId={selected?.id ?? null}
+            authorMissing={authorMissing}
+            onSelect={select}
+            onApprove={(id) => queue.approve(id)}
+            onApproveAll={() => queue.approveAll()}
+            onRetry={(id) => queue.retry(id)}
+            onRemove={(id) => queue.remove(id)}
+            onClearFinished={() => queue.clearFinished()}
+          />
         </div>
 
-        {/* Right column: preview / editor (only this panel scrolls) */}
+        {/* Right column: preview / editor of the selected file (only this panel scrolls) */}
         <div className="card flex min-h-0 flex-col lg:h-full lg:w-1/2">
-          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-            <div className="flex gap-1">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+            <div className="flex shrink-0 gap-1">
               {(["preview", "edit"] as RightTab[]).map((tab) => (
                 <button
                   key={tab}
@@ -268,42 +211,35 @@ export function DocumentationPage() {
                 </button>
               ))}
             </div>
-            {rightTab === "edit" && status === "ready" && (
-              <span className="text-[11px] text-[var(--color-muted)]">
-                {markdown.length.toLocaleString()} characters
-              </span>
+            {selected && (
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  className="truncate text-xs text-[var(--color-muted)]"
+                  title={selected.fileName}
+                >
+                  {selected.fileName}
+                  {rightTab === "edit" && selected.markdown
+                    ? ` · ${selected.markdown.length.toLocaleString()} characters`
+                    : ""}
+                </span>
+                {selected.stage === "ready" && (
+                  <button
+                    onClick={() => queue.approve(selected.id)}
+                    disabled={!selected.markdown.trim()}
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-2)] px-3 py-1.5 text-xs font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Check className="h-3.5 w-3.5" /> Approve
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
           <div className="flex min-h-[420px] flex-1 flex-col overflow-auto p-5 lg:min-h-0">
-            {status !== "ready" ? (
-              <div className="flex h-full items-center justify-center text-sm text-[var(--color-muted)]">
-                Add a file to see the {rightTab === "edit" ? "document" : "preview"}.
-              </div>
-            ) : rightTab === "preview" ? (
-              // .txt is not Markdown — rendering it as such would invent
-              // structure the author never wrote.
-              sourceFormat === "text" ? (
-                <pre className="text-sm leading-relaxed break-words whitespace-pre-wrap text-[#e6ebf3]">
-                  {markdown}
-                </pre>
-              ) : (
-                <MarkdownPreview content={markdown} />
-              )
+            {selected ? (
+              renderBody(selected)
             ) : (
-              // Edits go straight into the state the payload is built from, so
-              // what you see here is what gets sent — and the draft in
-              // localStorage keeps them across a refresh. This is also the
-              // repair path for the one thing the converter gets wrong:
-              // multi-line YAML and code blocks arrive flattened onto one line.
-              <textarea
-                value={markdown}
-                onChange={(event) => setMarkdown(event.target.value)}
-                disabled={sending}
-                spellCheck={false}
-                aria-label="Markdown content"
-                className="min-h-[420px] w-full flex-1 resize-none bg-transparent font-mono text-xs leading-relaxed text-[#e6ebf3] outline-none lg:min-h-0"
-              />
+              <Placeholder>Add files to see a preview.</Placeholder>
             )}
           </div>
         </div>

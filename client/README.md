@@ -6,7 +6,8 @@ Diagnosis in Cloud-Native Infrastructures_.
 ## Features
 
 - **Documentation** (main view) — add documents to the RAG knowledge base via _drag & drop_
-  or a file picker. Supported formats:
+  or a file picker, several at once and more while others are still being processed.
+  Supported formats:
   - **PDF** → converted to Markdown by the local **doc-converter** service (max 15 MB).
   - **Markdown / plain text** (`.md`, `.markdown`, `.mdx`, `.txt`) → no conversion (passthrough).
   - The converted Markdown is **editable by hand before sending** (Preview / Edit tabs) —
@@ -21,12 +22,22 @@ Diagnosis in Cloud-Native Infrastructures_.
     }
     ```
     (`nazwa_pliku` is optional and only sent when there is a file name.)
-  - **Send** posts it to the RAG knowledge base (`POST /api/documents`) and clears the
-    form. The confirmation says whether the document was indexed or was already there
-    (re-sending identical content is a no-op, not a duplicate); on failure the draft
-    stays on screen with the server's explanation.
-  - A draft (file name, converted content, metadata) is persisted in `localStorage`, so a
-    page refresh does not lose your work.
+  - Every file joins an **upload queue** listed on the page, with its state (waiting,
+    converting, ready, sending, added, failed). **Markdown and text are sent right away**;
+    a **converted PDF waits as _ready_** until you review it and press **Approve** (or
+    **Approve all**). Documents are sent with the author and date from the metadata form.
+  - PDFs are converted one at a time (the converter runs a single worker), and documents
+    are sent one at a time; the queue keeps running while you are on another page, and
+    the sidebar shows how many files are still on their way.
+  - **Cancel / Remove** (✕) drops a file from the queue. A request already in flight is
+    only abandoned by the panel: a running conversion finishes in the converter anyway,
+    and a document being indexed may still end up in the knowledge base. A failed file
+    can be retried; a failed send keeps its text.
+  - The confirmation says whether the document was indexed or was already there
+    (re-sending identical content is a no-op, not a duplicate).
+  - Converted documents, their edits and their state are persisted in `localStorage`, so
+    a page refresh does not lose your work. A file still waiting for or in conversion
+    exists only in memory, so the browser asks before leaving the page while there is one.
 - **Knowledge base** — the documents in the RAG knowledge base, with a search box that
   filters by file name or title (case- and accent-insensitive). Opening a document shows
   its full Markdown beside the list; a document added before the server kept originals

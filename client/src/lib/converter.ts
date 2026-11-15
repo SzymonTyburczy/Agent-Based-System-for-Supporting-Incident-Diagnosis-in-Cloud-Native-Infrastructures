@@ -44,7 +44,7 @@ export function detectSourceFormat(file: File): SourceFormat | null {
   return null;
 }
 
-async function convertPdfWithService(file: File): Promise<string> {
+async function convertPdfWithService(file: File, signal?: AbortSignal): Promise<string> {
   const baseUrl = getConverterUrl();
   if (!baseUrl) {
     throw new Error(
@@ -56,15 +56,18 @@ async function convertPdfWithService(file: File): Promise<string> {
   body.append("file", file);
   const token = getConverterToken();
 
+  const timeout = AbortSignal.timeout(CONVERSION_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(`${baseUrl}/convert`, {
       method: "POST",
       body,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-      signal: AbortSignal.timeout(CONVERSION_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
   } catch (err) {
+    // A cancel is the caller's own doing — rethrown as is, never reworded.
+    if (signal?.aborted) throw err;
     if (err instanceof Error && err.name === "TimeoutError") {
       throw new Error("The converter did not finish in time. Try a shorter document.");
     }
@@ -97,12 +100,18 @@ async function convertPdfWithService(file: File): Promise<string> {
  * The passthrough is not an optimisation — it is the only way a file stays
  * byte-exact. Docling would re-parse an already-valid Markdown document and
  * reflow it, which is why the service refuses these formats outright.
+ *
+ * `signal` cancels the request only: the converter has no way to hear it, so a
+ * conversion already running there finishes anyway.
  */
-export async function convertToMarkdown(file: File): Promise<ConversionResult> {
+export async function convertToMarkdown(
+  file: File,
+  signal?: AbortSignal,
+): Promise<ConversionResult> {
   const sourceFormat = detectSourceFormat(file);
 
   if (sourceFormat === "pdf") {
-    const markdown = await convertPdfWithService(file);
+    const markdown = await convertPdfWithService(file, signal);
     return { markdown, sourceFormat, engine: "docling" };
   }
 
