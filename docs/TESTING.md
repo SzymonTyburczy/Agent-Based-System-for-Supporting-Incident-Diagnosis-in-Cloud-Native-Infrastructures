@@ -255,14 +255,20 @@ curl --fail-with-body -H 'Origin: http://localhost:3000' -F 'file=@sample.pdf' h
 
 Expected: health reports `engine: docling`; conversion returns non-empty `markdown`,
 `pages`, and `duration_ms`. If `API_TOKEN` is set, provide its Authorization header.
-In the panel, open **Documentation**, upload the PDF, inspect Preview, and edit the
-result using the Edit tab. Confirm the converter status is online. Markdown/text
-uploads should work even without the converter. **Send** posts the document to the RAG
-knowledge base: with the RAG API running (step 8) the confirmation names the document
-and its fragment count, pressing Send twice reports it as already indexed, and with the
-API stopped the draft stays on screen with the connection error. The payload carries
-the uploaded file's name as `nazwa_pliku`, so the document is listed under that name
-in the Knowledge base view (step 11). Step 8 exercises the same endpoint directly.
+In the panel, open **Documentation** and drop two PDFs and a Markdown file at once.
+Confirm the converter status is online. The upload list shows each file's state: the
+PDFs convert one at a time, the Markdown file is sent right away (it needs no
+converter), and each converted PDF stops at **Converted — review and approve**. Select
+one, inspect Preview, edit it in the Edit tab, and press **Approve**; **Approve all**
+approves the rest. With the RAG API running (step 8) a sent row reads **Added to the
+knowledge base (N fragments)**, and the same file added again reads **Already in the
+knowledge base**. With the API stopped a row fails with the connection error and keeps
+its text; **Retry** sends it again. Switching to another page while files are
+processing does not stop them, and the sidebar badge counts the files still on their
+way. ✕ removes a file (or cancels it while it is converting or sending). A refresh
+keeps converted and approved documents. The payload carries the uploaded file's name
+as `nazwa_pliku`, so the document is listed under that name in the Knowledge base view
+(step 11). Step 8 exercises the same endpoint directly.
 
 The initial host-process start may download model weights; the Docker image already
 contains the default models. An image-only PDF can return 422 with OCR disabled;
@@ -274,7 +280,7 @@ Check headings and tables as well as the HTTP status.
 Start the RAG API as described in [RUNNING.md](RUNNING.md#4-start-the-rag-knowledge-base)
 or [CONTAINERS.md](CONTAINERS.md#rag-knowledge-base-server). The payload is the same
 `{data, autor, tresc}` shape the panel sends from the Documentation view, plus its
-optional `nazwa_pliku`, so this is the API-level version of step 7's **Send**. The
+optional `nazwa_pliku`, so this is the API-level version of step 7's upload. The
 `GET` calls are what the Knowledge base view uses. Windows PowerShell 5.1 does not send
 string bodies as UTF-8, so keep non-ASCII text (such as Polish diacritics) out of
 these commands there, or use PowerShell 7.
@@ -431,7 +437,7 @@ tests cover them.
 
 ### 11. Browse the knowledge base in the panel
 
-Ingest a document or two (step 7's **Send**, or step 8 without its DELETE), then
+Ingest a document or two (step 7's upload, or step 8 without its DELETE), then
 open [Knowledge base](http://localhost:3000/knowledge-base).
 
 - The list shows the documents, newest first. Each row shows the file name (or the
@@ -444,7 +450,7 @@ open [Knowledge base](http://localhost:3000/knowledge-base).
   full Markdown, and the URL gains `?doc=<doc_id>`; Back closes it. Images in a
   document are shown as an `[image: …]` placeholder and never loaded.
 - **Refresh** reloads the list. The panel caches documents for 30 seconds, and a
-  **Send** in Documentation updates the cache at once. A document ingested from a
+  document sent from Documentation updates the cache at once. A document ingested from a
   terminal appears after **Refresh**, or when the view is opened again more than
   30 seconds later.
 - **Delete** (the trash icon) asks for confirmation and then removes the row. If the

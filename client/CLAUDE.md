@@ -5,19 +5,30 @@ system in cloud-native infrastructures (IDAR).
 
 Main views:
 
-- **Documentation** — add documents (drag & drop / file picker, max 15 MB) to the RAG
-  knowledge base; PDF is converted to Markdown by the local `doc-converter` service,
-  Markdown/text passes through unchanged. The converted Markdown is editable in place
-  (Preview / Edit tabs) and the edit is what ends up in the payload. The result is packed as JSON `{ data, autor, tresc }` (field names
-  are Polish per the agreed backend contract; `data` is a day-precision date, yyyy-MM-dd),
-  plus the optional `nazwa_pliku` — the uploaded file's name — when there is one.
-  Send posts it to the RAG knowledge base (`server/`, `POST /api/documents`) and clears
-  the form; the confirmation distinguishes a fresh ingest from a document the server
-  already had (`already_exists` — document ids are a hash of `tresc`). A failure keeps
-  the draft on screen, because converting and hand-editing a document is the expensive
-  part; for the same reason the form is locked while Send is in flight, so the reset
-  after success never wipes an edit made meanwhile. The in-progress draft is persisted
-  to localStorage. A successful ingest invalidates the cached knowledge-base documents.
+- **Documentation** — add documents (drag & drop / file picker, max 15 MB, any number at
+  any time) to the RAG knowledge base through an upload queue (`src/lib/uploadQueue.ts`,
+  owned by `UploadQueueProvider` in `Layout` so it keeps running on other pages). PDF is
+  converted to Markdown by the local `doc-converter` service and then **waits as `ready`
+  for the user's Approve**, because the converter can flatten YAML/code blocks and only
+  the user can repair them; Markdown/text passes through unchanged and is **sent without
+  approval**. PDFs convert one at a time (the converter has a single worker) and
+  documents send one at a time. The selected file's Markdown is editable in place
+  (Preview / Edit tabs) until it is sent, and the edit is what ends up in the payload.
+  The payload is JSON `{ data, autor, tresc }` (field names are Polish per the agreed
+  backend contract; `data` is a day-precision date, yyyy-MM-dd), plus the optional
+  `nazwa_pliku` — the uploaded file's name. Author and date come from the page's
+  metadata form, read when each send starts; sending waits for a non-empty author that
+  has stopped changing (`AUTHOR_SETTLE_MS`), or an auto-sent Markdown file would go out
+  with the first typed letter as its author. Each item ends `done` (fresh ingest or
+  `already_exists` — document ids are a hash of `tresc`) or `error` (Retry resumes the
+  failed step; a failed send keeps its text). Remove (✕) on an in-flight item only
+  abandons the request. The queue is persisted to localStorage (debounced, flushed on
+  `pagehide`); a file waiting for or in conversion cannot be (a `File` does not survive
+  a reload), so `beforeunload` warns while one exists, and an item caught mid-send is
+  saved as approved and resent on the next load — safe because ingest is idempotent,
+  and why a send failure is recorded only after `SEND_FAILURE_GRACE_MS` (a reload kills
+  the request just before the page goes). Every finished send invalidates the cached
+  knowledge-base documents.
 - **Knowledge base** — `/knowledge-base`: the documents in the RAG knowledge base
   (`GET /api/documents`, metadata only), filtered client-side by file name / title
   (`filterDocuments`: case- and diacritics-insensitive, every word must match). Selecting
@@ -50,8 +61,8 @@ Main views:
 Conventions:
 
 - `src/lib/` — pure logic (api, reportWire, reportsCache, issueView, converter,
-  knowledgeBase, documentsCache, documentSearch, citations, fragment, markdownLines,
-  layout, settings, types, format); vitest tests live alongside the tested module.
+  knowledgeBase, uploadQueue, documentsCache, documentSearch, citations, fragment,
+  markdownLines, layout, settings, types, format); vitest tests live alongside the tested module.
 - Component tests (`src/components/*.test.tsx`) render with `react-dom/server`'s
   `renderToStaticMarkup`: vitest runs in node with no DOM, so they pin the markup a
   component produces (highlights, chips, notes), not interaction.
@@ -69,9 +80,9 @@ Conventions:
 - `src/lib/reportsCache.ts` — the query keys, the `QueryClient` defaults, and
   `cacheReport()`, which writes one report into both the detail and the list cache. Any
   new consumer of report data reads through `useReports` / `useIssueDetail`, not `fetch`.
-- `src/hooks/` — shared hooks (`useReports`, `useIssueDetail`, `useDocDraft`,
-  `useTransientFlag`, `useConverterHealth`, `useDocuments`, `useDocumentPanel`) plus
-  `streamContext`.
+- `src/hooks/` — shared hooks (`useReports`, `useIssueDetail`, `useTransientFlag`,
+  `useConverterHealth`, `useDocuments`, `useDocumentPanel`) plus `streamContext` and
+  `uploadQueueContext` (`useUploadQueue`).
 - Shared `.card` / `.input` / `.btn-secondary` CSS component classes live in
   `src/index.css`; shared `EmptyCard` / `ErrorCard` / `StaleBanner` / `IssueMeta` live in
   `src/components/Cards.tsx`. Use them rather than re-pasting the Tailwind string.
@@ -112,9 +123,10 @@ Report rendering — standing rules:
   images (it may come from a third-party PDF). The viewer highlights by remark offsets
   (`highlight`, from `locateFragment` / `findSectionHeading`), so the `content` string
   must reach `MarkdownPreview` unmodified — any rewrite moves the highlight.
-- `<main>` in `Layout` is the app's only vertical scroll container, with three deliberate
+- `<main>` in `Layout` is the app's only vertical scroll container, with four deliberate
   exceptions: the Documentation preview/editor panel, which is height-bounded by
-  `lg:h-full` so the upload form beside it stays put, the raw-diagnosis `<details>`,
+  `lg:h-full` so the upload form beside it stays put, the Documentation upload list,
+  bounded (`max-h-80`) so a long batch never pushes the form away, the raw-diagnosis `<details>`,
   which is a disclosure rather than a scroll region, and `DocumentViewer`, which
   scrolls to the cited passage inside itself (viewport-tall and sticky at `xl`) without
   moving the report beside it. `Layout` drops its `max-w-6xl` where the viewer sits

@@ -123,6 +123,22 @@ describe("convertToMarkdown", () => {
     ).rejects.toThrow(/Could not reach the document converter/);
   });
 
+  it("rethrows a cancel as is, and passes the caller's signal to the request", async () => {
+    const abort = new DOMException("The operation was aborted.", "AbortError");
+    const fetchMock = vi.fn().mockRejectedValue(abort);
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      convertToMarkdown(
+        new File([new Uint8Array([1])], "a.pdf", { type: "application/pdf" }),
+        controller.signal,
+      ),
+    ).rejects.toBe(abort);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).signal?.aborted).toBe(true);
+  });
+
   it("names the missing setting when the converter URL is not configured", async () => {
     vi.stubEnv("VITE_CONVERTER_URL", "");
 
