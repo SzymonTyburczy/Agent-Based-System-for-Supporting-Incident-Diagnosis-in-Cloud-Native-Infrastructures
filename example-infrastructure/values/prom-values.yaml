@@ -73,7 +73,7 @@ alertmanager:
         # receiver anyway, but this makes the intent visible in the file.
         - receiver: agent-webhook
           matchers:
-            - alertname =~ "AdServiceHighCpu|CheckoutServiceErrors|KafkaConsumerFrozen"
+            - alertname =~ "AdServiceHighCpu|PaymentServiceFailure|ImageSlowLoad|KafkaConsumerLag|FrontendHighRequestRate"
     receivers:
       - name: "null"
       - name: agent-webhook
