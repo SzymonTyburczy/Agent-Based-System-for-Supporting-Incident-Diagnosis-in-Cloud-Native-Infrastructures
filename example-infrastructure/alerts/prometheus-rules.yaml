@@ -9,6 +9,9 @@ spec:
   groups:
   - name: ThesisAlerts
     rules:
+
+    # ── Resource exhaustion: adHighCpu flag ─────────────────────────
+
     - alert: AdServiceHighCpu
       expr: rate(container_cpu_usage_seconds_total{namespace="otel-demo", pod=~"ad-.*"}[1m]) > 1
       for: 1m
@@ -16,20 +19,50 @@ spec:
         severity: critical
       annotations:
         summary: "Ad Service CPU usage is extremely high"
-        description: "Ad Service CPU usage has exceeded the threshold of 1.0"
-    - alert: CheckoutServiceErrors
-      expr: sum(rate(rpc_server_duration_milliseconds_count{job=~".*checkout.*", rpc_grpc_status_code!="0"}[5m])) > 0
+        description: "Ad Service CPU usage has exceeded 1.0 vCPU for over 1 minute"
+
+    # ── Logical failure: paymentFailure flag ──────────────────────────
+
+    - alert: PaymentServiceFailure
+      expr: sum(rate(traces_span_metrics_calls_total{service_name="payment", span_kind="SPAN_KIND_SERVER", span_name=~".*Charge.*", status_code="STATUS_CODE_ERROR"}[5m])) > 0.01
       for: 1m
       labels:
         severity: critical
       annotations:
-        summary: "Checkout Service is returning errors"
-        description: "Checkout Service gRPC error rate is non-zero"
-    - alert: KafkaConsumerFrozen
-      expr: sum(rate(kafka_consumer_records_consumed_total[2m])) == 0
+        summary: "Payment Service is returning gRPC errors"
+        description: "Payment Service gRPC error rate is non-zero"
+
+    # ── Performance degradation: imageSlowLoad flag ──────────────────
+
+    - alert: ImageSlowLoad
+      expr: histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket{service_name="frontend-proxy", span_name="ingress"}[2m])) by (le)) > 3000
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Product image loading is extremely slow"
+        description: "Frontend proxy ingress p95 latency exceeds 3 seconds"
+
+    # ── Asynchronous-pipeline failure: kafkaQueueProblems flag ────────
+
+    - alert: KafkaConsumerLag
+      expr: max(kafka_consumer_records_lag_max) > 2
+        or histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket{service_name="fraud-detection", span_name="orders process"}[2m])) by (le)) > 500
       for: 1m
       labels:
         severity: critical
       annotations:
-        summary: "Kafka consumer has stopped processing"
-        description: "Kafka consumer rate dropped to 0, indicating a frozen consumer"
+        summary: "Kafka consumer is experiencing severe lag or processing delay"
+        description: "Kafka consumer lag exceeds threshold or processing latency exceeds 500ms in fraud-detection"
+
+    # ── Saturation: loadGeneratorFloodHomepage flag ───────────────────
+
+    - alert: FrontendHighRequestRate
+      expr: sum(rate(traces_span_metrics_calls_total{service_name="frontend", span_name="GET /"}[2m])) > 2
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Frontend homepage is receiving an abnormally high volume of requests"
+        description: "Frontend homepage request rate exceeds threshold under flood"
+
