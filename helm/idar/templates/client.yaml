@@ -1,0 +1,77 @@
+{{- /*
+idar-client — the web panel (k8s/client.yaml): the React build on
+unprivileged Nginx, which also proxies /api/agent, /api/converter and /api/rag
+to <service>.idar.svc.cluster.local (client/nginx.conf). Stateless.
+*/ -}}
+{{- if .Values.client.enabled }}
+{{- $v := .Values.client }}
+{{- $meta := dict "ctx" $ "name" "idar-client" "component" "web-panel" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: idar-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "idar.selectorLabels" $meta | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idar-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      {{- include "idar.selectorLabels" $meta | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "idar.podLabels" $meta | nindent 8 }}
+    spec:
+      {{- include "idar.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml $v.podSecurityContext | nindent 8 }}
+      {{- include "idar.scheduling" $v | nindent 6 }}
+      containers:
+        - name: idar-client
+          image: {{ include "idar.image" (dict "ctx" $ "image" $v.image "idar" true) }}
+          imagePullPolicy: {{ $v.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml $v.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml $v.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          securityContext:
+            {{- include "idar.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            # The unprivileged image keeps its pid file and temp paths in /tmp.
+            # Its entrypoint also tries to add an IPv6 listener to
+            # default.conf and logs "can not modify ... (read-only file
+            # system?)" — expected; it skips that step and serves on 8080.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

@@ -1,0 +1,213 @@
+{{- /*
+agent-core — the diagnostic agent (k8s/agent-core.yaml): Alertmanager webhook,
+investigation worker and the reports API the panel reads.
+
+One replica, Recreate: the investigation queue and the SSE broadcaster live in
+process memory and reports are a local SQLite file, so two Pods must never run
+at once.
+*/ -}}
+{{- if .Values.agentCore.enabled }}
+{{- $v := .Values.agentCore }}
+{{- $meta := dict "ctx" $ "name" "agent-core" "component" "diagnostic-agent" }}
+{{- $config := include "idar.agentCore.configData" . }}
+{{- $profile := $v.environmentProfile.files | default dict }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-core
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "agent-core") | nindent 4 }}
+{{- if $v.rbac.create }}
+{{- range $ns := $v.rbac.namespaces }}
+---
+# Read-only access for kubectl inside the Pod. The application allowlist
+# (KUBECTL_ALLOWED_NAMESPACES) is built from the same list; RBAC is the grant.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-core-reader
+  namespace: {{ $ns }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "agent-core") | nindent 4 }}
+rules:
+  {{- toYaml $v.rbac.rules | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-core-reader
+  namespace: {{ $ns }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "agent-core") | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: agent-core
+    namespace: {{ $.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-core-reader
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-core-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "agent-core") | nindent 4 }}
+data:
+  {{- $config | nindent 2 }}
+{{- if $profile }}
+---
+# Prompt profile mounted at /etc/idar/environment (AGENT_ENVIRONMENT).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-core-environment
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "agent-core") | nindent 4 }}
+data:
+  {{- toYaml $profile | nindent 2 }}
+{{- end }}
+{{- include "idar.secret" (dict "ctx" $ "name" "agent-core" "secret" $v.secret) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agent-core-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "agent-core") | nindent 4 }}
+  {{- if $v.persistence.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- include "idar.storageClassName" (dict "ctx" $ "persistence" $v.persistence) | nindent 2 }}
+  resources:
+    requests:
+      storage: {{ $v.persistence.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-core
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "idar.selectorLabels" $meta | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-core
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "idar.selectorLabels" $meta | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "idar.podLabels" $meta | nindent 8 }}
+      annotations:
+        {{- include "idar.checksums" (dict "config" (print $config (toYaml $profile)) "secret" $v.secret) | nindent 8 }}
+    spec:
+      serviceAccountName: agent-core
+      {{- include "idar.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml $v.podSecurityContext | nindent 8 }}
+      {{- include "idar.scheduling" $v | nindent 6 }}
+      containers:
+        - name: agent-core
+          image: {{ include "idar.image" (dict "ctx" $ "image" $v.image "idar" true) }}
+          imagePullPolicy: {{ $v.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: agent-core-config
+            {{- include "idar.secretRef" $v.secret | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml $v.probes.startup | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml $v.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml $v.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          securityContext:
+            {{- include "idar.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # kubectl keeps its discovery cache under $HOME/.kube.
+            - name: home
+              mountPath: /home/agent
+            - name: tmp
+              mountPath: /tmp
+            {{- if $profile }}
+            - name: environment
+              mountPath: /etc/idar/environment
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: agent-core-data
+        - name: home
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- if $profile }}
+        - name: environment
+          configMap:
+            name: agent-core-environment
+        {{- end }}
+{{- end }}
+
+{{- define "idar.agentCore.configData" -}}
+{{- $v := .Values.agentCore -}}
+{{- $derived := dict
+  "OLLAMA_BASE_URL" (include "idar.ollamaUrl" .)
+  "RAG_API_URL" (ternary (include "idar.ragServerUrl" .) "" .Values.ragServer.enabled)
+  "WEBHOOK_HOST" "0.0.0.0"
+  "WEBHOOK_PORT" "8080"
+  "KUBECTL_ALLOWED_NAMESPACES" (join "," $v.rbac.namespaces)
+  "CLIENT_ALLOWED_ORIGINS" .Values.global.panelOrigin
+  "REPORT_OUTPUT_DIR" "/data/reports"
+  "REPORTS_DB_PATH" "/data/reports/reports.db"
+-}}
+{{- $config := mergeOverwrite $derived ($v.env | default dict) -}}
+{{- if $v.environmentProfile.files -}}
+{{- $_ := set $config "AGENT_ENVIRONMENT" "/etc/idar/environment" -}}
+{{- end -}}
+{{- include "idar.envData" $config -}}
+{{- end }}

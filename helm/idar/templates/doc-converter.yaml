@@ -1,0 +1,119 @@
+{{- /*
+doc-converter — PDF to Markdown with Docling (k8s/doc-converter.yaml).
+Models are in the image: no volume, no downloads at runtime. One Gunicorn
+worker with one thread, several GiB per conversion: one replica, Recreate.
+*/ -}}
+{{- if .Values.docConverter.enabled }}
+{{- $v := .Values.docConverter }}
+{{- $meta := dict "ctx" $ "name" "doc-converter" "component" "document-converter" }}
+{{- $config := include "idar.docConverter.configData" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doc-converter-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "doc-converter") | nindent 4 }}
+data:
+  {{- $config | nindent 2 }}
+{{- include "idar.secret" (dict "ctx" $ "name" "doc-converter" "secret" $v.secret) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: doc-converter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "idar.selectorLabels" $meta | nindent 4 }}
+  ports:
+    - name: http
+      port: 5001
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doc-converter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  replicas: 1
+  # A rolling update would briefly run two memory-hungry copies side by side.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "idar.selectorLabels" $meta | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "idar.podLabels" $meta | nindent 8 }}
+      annotations:
+        {{- include "idar.checksums" (dict "config" $config "secret" $v.secret) | nindent 8 }}
+    spec:
+      {{- include "idar.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml $v.podSecurityContext | nindent 8 }}
+      {{- include "idar.scheduling" $v | nindent 6 }}
+      containers:
+        - name: doc-converter
+          image: {{ include "idar.image" (dict "ctx" $ "image" $v.image "idar" true) }}
+          imagePullPolicy: {{ $v.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: doc-converter-config
+            {{- include "idar.secretRef" $v.secret | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 5001
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml $v.probes.startup | nindent 12 }}
+          livenessProbe:
+            # /healthz waits behind a running conversion. Tolerate more than
+            # Gunicorn's timeout (conversionTimeoutSeconds + 60 s), with
+            # four periods to spare, so a large PDF does not restart the Pod.
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: {{ $v.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $v.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ add (div (add (int $v.conversionTimeoutSeconds) 60) (int $v.probes.liveness.periodSeconds)) 4 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml $v.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          securityContext:
+            {{- include "idar.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            # Gunicorn keeps its control socket in $HOME/.gunicorn and the
+            # Python libraries their caches under $HOME.
+            - name: home
+              mountPath: /home/converter
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: home
+          emptyDir: {}
+{{- end }}
+
+{{- define "idar.docConverter.configData" -}}
+{{- $v := .Values.docConverter -}}
+{{- $derived := dict
+  "ALLOWED_ORIGINS" .Values.global.panelOrigin
+  "CONVERSION_TIMEOUT_SECONDS" $v.conversionTimeoutSeconds
+-}}
+{{- include "idar.envData" (mergeOverwrite $derived ($v.env | default dict)) -}}
+{{- end }}

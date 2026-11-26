@@ -1,0 +1,21 @@
+apiVersion: v2
+name: idar
+description: >-
+  IDAR — agent-based incident diagnosis for cloud-native infrastructures:
+  diagnostic agent, RAG knowledge base (Qdrant + Ollama), document converter
+  and the web panel.
+type: application
+# Chart version: bump on every change to templates or default values.
+version: 0.1.0
+# Version of the IDAR images the default values point to.
+appVersion: "v0.2.0"
+# Pod Security Admission (namespace label "restricted") is GA since 1.25.
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - incident-diagnosis
+  - rag
+  - observability
+  - llm-agent
+home: https://github.com/SzymonTyburczy/Agent-Based-System-for-Supporting-Incident-Diagnosis-in-Cloud-Native-Infrastructures
+sources:
+  - https://github.com/SzymonTyburczy/Agent-Based-System-for-Supporting-Incident-Diagnosis-in-Cloud-Native-Infrastructures

@@ -1,0 +1,154 @@
+{{- /*
+qdrant — vector store behind the RAG knowledge base (k8s/qdrant.yaml).
+One replica on a ReadWriteOnce volume; only rag-server talks to it.
+*/ -}}
+{{- if .Values.qdrant.enabled }}
+{{- $v := .Values.qdrant }}
+{{- $meta := dict "ctx" $ "name" "qdrant" "component" "vector-store" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "idar.selectorLabels" $meta | nindent 4 }}
+  ports:
+    - name: http
+      port: 6333
+      targetPort: http
+    - name: grpc
+      port: 6334
+      targetPort: grpc
+---
+# Governing Service of the StatefulSet (stable per-Pod DNS). Clients use the
+# ClusterIP Service above.
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "idar.selectorLabels" $meta | nindent 4 }}
+  ports:
+    - name: http
+      port: 6333
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  serviceName: qdrant-headless
+  # Qdrant without cluster mode: never more than one.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "idar.selectorLabels" $meta | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "idar.podLabels" $meta | nindent 8 }}
+    spec:
+      {{- include "idar.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml $v.podSecurityContext | nindent 8 }}
+      {{- include "idar.scheduling" $v | nindent 6 }}
+      containers:
+        - name: qdrant
+          image: {{ include "idar.image" (dict "ctx" $ "image" $v.image) }}
+          imagePullPolicy: {{ $v.image.pullPolicy }}
+          env:
+            # Everything Qdrant writes goes to the volume, so the image itself
+            # can stay read-only.
+            - name: QDRANT__STORAGE__STORAGE_PATH
+              value: /qdrant/storage
+            - name: QDRANT__STORAGE__SNAPSHOTS_PATH
+              value: /qdrant/storage/snapshots
+            - name: QDRANT_INIT_FILE_PATH
+              value: /qdrant/storage/.qdrant-initialized
+            - name: QDRANT__TELEMETRY_DISABLED
+              value: {{ $v.telemetryDisabled | toString | quote }}
+          ports:
+            - name: http
+              containerPort: 6333
+            - name: grpc
+              containerPort: 6334
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            {{- toYaml $v.probes.startup | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            {{- toYaml $v.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            {{- toYaml $v.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          securityContext:
+            {{- include "idar.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: storage
+              mountPath: /qdrant/storage
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  # Identical to k8s/qdrant.yaml: volumeClaimTemplates are immutable, so an
+  # existing StatefulSet can only be adopted when they match. The claim
+  # (storage-qdrant-0) outlives `helm uninstall`, as with every StatefulSet.
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        labels:
+          app.kubernetes.io/name: qdrant
+          app.kubernetes.io/part-of: idar
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- include "idar.storageClassName" (dict "ctx" $ "persistence" $v.persistence) | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ $v.persistence.size }}
+{{- if .Values.networkPolicies.enabled }}
+---
+# Qdrant has no authentication: admit rag-server only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qdrant
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "qdrant") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "idar.selectorLabels" $meta | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rag-server
+      ports:
+        - port: 6333
+        - port: 6334
+{{- end }}
+{{- end }}

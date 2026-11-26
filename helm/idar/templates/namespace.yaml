@@ -1,0 +1,18 @@
+{{- /*
+The release namespace with the Pod Security labels (k8s/00-namespace.yaml).
+Only with namespace.create: true, and then without --create-namespace.
+Kept on uninstall so the PVCs in it survive.
+*/ -}}
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: idar
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    pod-security.kubernetes.io/enforce: {{ .Values.namespace.podSecurity.enforce }}
+    pod-security.kubernetes.io/enforce-version: {{ .Values.namespace.podSecurity.enforceVersion }}
+  annotations:
+    helm.sh/resource-policy: keep
+{{- end }}

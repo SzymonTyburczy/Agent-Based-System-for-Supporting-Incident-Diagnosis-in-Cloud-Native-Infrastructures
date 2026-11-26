@@ -1,0 +1,46 @@
+# Profile: Docker Desktop (kind) or another local cluster, with the four IDAR
+# images built from this repository and imported into the node (k8s/README.md,
+# "Docker Desktop (kind)"):
+#
+#   docker build --build-arg KUBECTL_VERSION=v1.34.3 -t idar-agent-core:local ./agent-core
+#   docker build -t idar-doc-converter:local ./doc-converter
+#   docker build -t idar-rag-server:local ./server
+#   docker build -t idar-client:local ./client
+#
+#   helm upgrade --install idar ./helm/idar -n idar --create-namespace \
+#     -f helm/idar/values-local.yaml
+#
+# The tags are reused, so after a rebuild and re-import restart the Deployment
+# (kubectl rollout restart deploy/<name> -n idar).
+#
+# Panel: kubectl port-forward -n idar svc/idar-client 3000:8080
+# then http://localhost:3000 (the default global.panelOrigin).
+#
+# Docker Desktop's networking does not enforce NetworkPolicies; they are
+# rendered anyway so the manifests match the cluster ones.
+
+ragServer:
+  image:
+    repository: idar-rag-server
+    tag: local
+    pullPolicy: IfNotPresent
+
+docConverter:
+  image:
+    repository: idar-doc-converter
+    tag: local
+    pullPolicy: IfNotPresent
+
+agentCore:
+  image:
+    repository: idar-agent-core
+    tag: local
+    pullPolicy: IfNotPresent
+
+client:
+  # One is enough without an Ingress.
+  replicas: 1
+  image:
+    repository: idar-client
+    tag: local
+    pullPolicy: IfNotPresent

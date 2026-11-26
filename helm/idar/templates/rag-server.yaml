@@ -1,0 +1,112 @@
+{{- /*
+rag-server — the RAG knowledge base API (k8s/rag-server.yaml). Stateless:
+vectors live in Qdrant, the embedding model in Ollama (or an
+OpenAI-compatible API when IDAR_EMBEDDING_API_KEY is in its Secret).
+*/ -}}
+{{- if .Values.ragServer.enabled }}
+{{- $v := .Values.ragServer }}
+{{- $meta := dict "ctx" $ "name" "rag-server" "component" "knowledge-base" }}
+{{- $config := include "idar.ragServer.configData" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-server-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "rag-server") | nindent 4 }}
+data:
+  {{- $config | nindent 2 }}
+{{- include "idar.secret" (dict "ctx" $ "name" "rag-server" "secret" $v.secret) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "idar.selectorLabels" $meta | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" $meta | nindent 4 }}
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      {{- include "idar.selectorLabels" $meta | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "idar.podLabels" $meta | nindent 8 }}
+      annotations:
+        {{- include "idar.checksums" (dict "config" $config "secret" $v.secret) | nindent 8 }}
+    spec:
+      {{- include "idar.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml $v.podSecurityContext | nindent 8 }}
+      {{- include "idar.scheduling" $v | nindent 6 }}
+      containers:
+        - name: rag-server
+          image: {{ include "idar.image" (dict "ctx" $ "image" $v.image "idar" true) }}
+          imagePullPolicy: {{ $v.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: rag-server-config
+            {{- include "idar.secretRef" $v.secret | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            # Uvicorn opens the port only after the dependency retries, so the
+            # probe outlasts them by a minute.
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: {{ $v.probes.startup.periodSeconds }}
+            failureThreshold: {{ add (div (mul (int $v.startupRetries) (int $v.startupRetrySeconds)) (int $v.probes.startup.periodSeconds)) 6 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml $v.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            {{- toYaml $v.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          securityContext:
+            {{- include "idar.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}
+
+{{- define "idar.ragServer.configData" -}}
+{{- $v := .Values.ragServer -}}
+{{- $derived := dict
+  "IDAR_QDRANT_URL" ($v.qdrantUrl | default (include "idar.qdrantUrl" .))
+  "IDAR_OLLAMA_URL" ($v.ollamaUrl | default (include "idar.ollamaUrl" .))
+  "IDAR_EMBEDDING_MODEL" $v.embeddingModel
+  "IDAR_CORS_ORIGINS" .Values.global.panelOrigin
+  "IDAR_STARTUP_RETRIES" $v.startupRetries
+  "IDAR_STARTUP_RETRY_SECONDS" $v.startupRetrySeconds
+-}}
+{{- include "idar.envData" (mergeOverwrite $derived ($v.env | default dict)) -}}
+{{- end }}
