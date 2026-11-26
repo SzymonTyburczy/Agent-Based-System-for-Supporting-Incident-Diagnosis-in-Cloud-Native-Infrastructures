@@ -465,3 +465,16 @@ client:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+# `helm test <release> -n idar`: health checks of every enabled service, directly
+# and through the panel's proxy (templates/tests/test-health.yaml).
+tests:
+  enabled: true
+  image:
+    registry: ""
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  # Per request. rag-server's /api/health runs an embedding (its own readiness
+  # probe allows 15 s).
+  timeoutSeconds: 20

@@ -170,8 +170,10 @@ other images.
 
 ### Kubernetes
 
-The manifests are in [`k8s/`](../k8s/): `rag-server.yaml`, `qdrant.yaml` and
-`ollama.yaml`, deployed as described in [`k8s/README.md`](../k8s/README.md).
+The Helm chart [`helm/idar/`](../helm/idar/README.md) deploys rag-server, Qdrant and
+Ollama together with the other IDAR services. The same objects exist as plain
+manifests in [`k8s/`](../k8s/): `rag-server.yaml`, `qdrant.yaml` and `ollama.yaml`
+([`k8s/README.md`](../k8s/README.md)).
 rag-server is a stateless Deployment (liveness `/healthz`, readiness `/api/health`),
 Qdrant a StatefulSet with a volume, and Ollama a Deployment that pulls the model onto
 its volume before it starts. The panel gets the API address as `VITE_RAG_API_URL` at

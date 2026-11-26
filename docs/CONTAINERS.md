@@ -87,7 +87,9 @@ mode; `webhook_server.py` provides the API used by the web panel.
 ## Running inside a cluster on EC2
 
 See [CLUSTER.md](CLUSTER.md) for the proposed namespaces, Pod separation, Services,
-Ingress, storage, node placement, and initial resource budgets.
+Ingress, storage, node placement, and initial resource budgets. The Helm chart
+[`helm/idar/`](../helm/idar/README.md) implements all of the points below; the
+list explains why the workloads are shaped this way.
 
 - Push the images to a registry accessible to the nodes (such as ECR) and use them in a Deployment.
 - Agent: use one replica, one worker, and the `Recreate` strategy. The current queue
@@ -106,8 +108,7 @@ Ingress, storage, node placement, and initial resource budgets.
 - Configure HTTP probes for `/healthz` on port `8080`, including a startupProbe
   that allows time to connect to MCP. Kubernetes does not use Docker's HEALTHCHECK.
 - RAG knowledge base: `rag-server` is stateless and may run with several replicas.
-  Qdrant needs a StatefulSet with a PVC (the official `qdrant/qdrant` Helm chart
-  works); Ollama needs a PVC for model weights (about 5 GB for `qwen3-embedding:8b`)
+  Qdrant needs a StatefulSet with a PVC (included in the IDAR chart); Ollama needs a PVC for model weights (about 5 GB for `qwen3-embedding:8b`)
   and either a GPU node or a generous CPU budget. Point `IDAR_QDRANT_URL` and
   `IDAR_OLLAMA_URL` at the in-cluster Services and configure liveness on `/healthz`,
   readiness on `/api/health`, and a startupProbe of about 90 seconds for the

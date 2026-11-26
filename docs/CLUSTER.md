@@ -5,6 +5,10 @@ It separates application workloads by lifecycle and resource profile. A namespac
 is a logical boundary; a node is a machine. Kubernetes schedules Pods from any
 namespace onto nodes that satisfy their resource requests and placement rules.
 
+The `idar` namespace described here is deployed by the Helm chart in
+[`helm/idar/`](../helm/idar/README.md). [`k8s/`](../k8s/README.md) holds the same
+objects as plain manifests.
+
 ## Logical layout
 
 ```mermaid
@@ -63,9 +67,9 @@ flowchart TB
 
     User --> Ingress
     Ingress --> ClientSvc
-    Ingress --> AgentSvc
-    Ingress --> ConverterSvc
-    Ingress --> RAGSvc
+    Client -->|/api/agent| AgentSvc
+    Client -->|/api/converter| ConverterSvc
+    Client -->|/api/rag| RAGSvc
     Alertmanager -->|POST /alerts/webhook| AgentSvc
     Agent -->|MCP SSE| MCP
     Agent -->|read-only Kubernetes API| Workloads
@@ -82,7 +86,7 @@ flowchart TB
 | `agent-core` | `idar` | Deployment with `Recreate` | 1 | PVC mounted at `/data` | in-memory queue and local SQLite prevent horizontal scaling |
 | `doc-converter` | `idar` | Deployment with `Recreate` | 1 initially | none when models are in the image | several GiB RAM per conversion; one worker/thread |
 | `rag-server` | `idar` | Deployment | 1, can scale | none | stateless; waits for Qdrant and Ollama at startup |
-| `qdrant` | `idar` | StatefulSet (official Helm chart) | 1 | PVC | vector store; pin the version used in `server/docker-compose.yml` (`v1.19.0`) |
+| `qdrant` | `idar` | StatefulSet | 1 | PVC | vector store; pin the version used in `server/docker-compose.yml` (`v1.19.0`) |
 | `ollama` | `idar` | Deployment with `Recreate` | 1 | PVC for model weights | embedding model; GPU node or a large CPU budget for `qwen3-embedding:8b` |
 | Grafana MCP | `observability` | Deployment | 1 initially | none | read-only mode and authentication |
 | Prometheus/Grafana/Loki/Tempo/Alertmanager | `observability` | chart-defined controllers | chart-specific | chart-specific PVCs | monitoring stack lifecycle |
@@ -132,30 +136,34 @@ ollama.idar.svc.cluster.local:11434
 grafana-mcp.observability.svc.cluster.local:8000
 ```
 
-The browser cannot resolve Kubernetes Service DNS. Ingress must expose the panel,
-agent API, and converter through public or private HTTPS URLs. A single host with
-path routing is preferred:
+The browser cannot resolve Kubernetes Service DNS, so it talks only to the panel.
+The panel's Nginx ([client/nginx.conf](../client/nginx.conf)) serves the React build
+and forwards the APIs on the same origin, removing the prefix:
 
 ```text
-https://idar.example.com/             -> idar-client:8080
-https://idar.example.com/api/         -> agent-core:8080
-https://idar.example.com/converter/   -> doc-converter:5001
-https://idar.example.com/rag/         -> rag-server:8080
+https://idar.example.com/                -> idar-client:8080 (static files)
+https://idar.example.com/api/agent/      -> agent-core:8080
+https://idar.example.com/api/converter/  -> doc-converter:5001
+https://idar.example.com/api/rag/        -> rag-server:8080
 ```
 
-Qdrant and Ollama stay ClusterIP-only: only `rag-server` calls them, and neither has
-authentication of its own. The RAG API needs an Ingress route only once the panel
-calls it from the browser; the agent reaches it through the in-cluster Service.
-The current frontend expects service base URLs and does not automatically remove
-Ingress path prefixes (the RAG API serves `/api/...` and `/healthz` at its root,
-so the same caveat applies to `/rag/`). Either configure Ingress rewrite rules carefully or use
-separate hosts such as `agent.idar.example.com` and `converter.idar.example.com`.
-Build `client` with browser-reachable `VITE_AGENT_API_URL` and
-`VITE_CONVERTER_URL`; in-cluster DNS names are incorrect for those values.
+One Ingress host in front of `idar-client` is therefore enough (`ingress.*` in the
+chart). The panel image is built with the matching relative defaults
+`VITE_AGENT_API_URL=/api/agent`, `VITE_CONVERTER_URL=/api/converter` and
+`VITE_RAG_API_URL=/api/rag`. Nginx answers 404 on `/api/agent/alerts/`, because the
+webhook is only for Alertmanager inside the cluster. Nginx addresses the services as
+`<service>.idar.svc.cluster.local`, so the workloads must run in namespace `idar`.
 
-Disable proxy buffering for `/reports/stream` and keep its timeout above the SSE
-keep-alive interval. Set `CLIENT_ALLOWED_ORIGINS` and converter `ALLOWED_ORIGINS`
-to the panel's exact HTTPS origin.
+Qdrant and Ollama stay ClusterIP-only: only `rag-server` calls them, and neither has
+authentication of its own. The agent reaches the RAG API through the in-cluster
+Service.
+
+The panel's Nginx does not buffer `/api/agent/reports/stream` (SSE). An Ingress in
+front of it must not buffer it either, and its read timeout must stay above the SSE
+keep-alive interval. The chart's ingress-nginx defaults do both.
+`CLIENT_ALLOWED_ORIGINS`, converter `ALLOWED_ORIGINS` and `IDAR_CORS_ORIGINS` matter
+only for callers that reach the APIs directly. Set them to the panel's exact origin
+(`global.panelOrigin` in the chart).
 
 ## Storage and models
 

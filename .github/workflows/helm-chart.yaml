@@ -1,0 +1,71 @@
+# Checks the IDAR Helm chart without a cluster:
+#   - helm lint --strict with the default values and every profile;
+#   - the rendered manifests against the Kubernetes API schemas (kubeconform);
+#   - the default render against the plain manifests in k8s/, while both exist.
+name: helm-chart
+
+on:
+  pull_request:
+    paths:
+      - "helm/**"
+      - "k8s/**"
+      - ".github/workflows/helm-chart.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "helm/**"
+      - "k8s/**"
+      - ".github/workflows/helm-chart.yaml"
+
+permissions:
+  contents: read
+
+env:
+  CHART: helm/idar
+  KUBERNETES_VERSION: 1.31.0
+  KUBECONFORM_VERSION: v0.6.7
+
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install kubeconform and PyYAML
+        run: |
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+          python -m pip install --quiet pyyaml==6.0.2
+
+      - name: Lint
+        run: |
+          for values in "" values-local.yaml values-microk8s-ec2.yaml ci/full-values.yaml; do
+            echo "::group::helm lint ${values:-defaults}"
+            helm lint "$CHART" --strict ${values:+-f "$CHART/$values"}
+            echo "::endgroup::"
+          done
+
+      - name: Validate against the Kubernetes schemas
+        run: |
+          for values in "" values-local.yaml values-microk8s-ec2.yaml ci/full-values.yaml; do
+            echo "::group::kubeconform ${values:-defaults}"
+            helm template idar "$CHART" -n idar --kube-version "$KUBERNETES_VERSION" \
+              ${values:+-f "$CHART/$values"} \
+              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION"
+            echo "::endgroup::"
+          done
+
+      - name: Compare with k8s/
+        run: |
+          helm template idar "$CHART" -n idar \
+            --set namespace.create=true --set storageClass.create=true > rendered.yaml
+          python helm/scripts/compare-with-k8s.py rendered.yaml k8s

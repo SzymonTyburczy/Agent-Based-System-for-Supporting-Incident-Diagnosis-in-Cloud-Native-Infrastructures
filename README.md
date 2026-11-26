@@ -29,6 +29,8 @@ Manual and automated tests (PowerShell and Bash): [`docs/TESTING.md`](docs/TESTI
 - **`server/`** — RAG knowledge base (Python/FastAPI + Qdrant + Qwen3-Embedding via Ollama): ingests the Markdown documentation prepared in the panel, chunks and embeds it, serves semantic search for the diagnostic agents, and returns the stored documents to the panel. Setup and details: [server/README.md](server/README.md).
 - **`client/`** — IDAR web panel (React + TypeScript + Vite): document ingestion and a browser for the RAG knowledge base, and live incident views with full structured diagnostic reports and their documentation citations. Setup and details: [client/README.md](client/README.md).
 - **`example-infrastructure/`** — demo cloud-native deployment with a configured observability stack.
+- **`helm/idar/`** — Helm chart that deploys all IDAR services to Kubernetes, with profiles for Docker Desktop and the microk8s cluster on EC2. Install and configuration: [helm/idar/README.md](helm/idar/README.md).
+- **`k8s/`** — the same deployment as plain manifests for `kubectl apply`. Kept until the chart has been verified on a live cluster; CI checks that both stay in sync.
 
 ## Validation
 

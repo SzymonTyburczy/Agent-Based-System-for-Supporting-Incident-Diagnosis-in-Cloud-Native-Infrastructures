@@ -33,6 +33,9 @@ Alerts flow **infra → agent-core** (via webhook or MCP), and reports flow
 later piece expects the one before it to already be reachable.
 Run each long-lived service in a separate terminal opened at the repository root.
 
+To run the IDAR services inside Kubernetes instead of as local processes, install
+the Helm chart: [helm/idar/README.md](../helm/idar/README.md).
+
 ## Prerequisites
 
 - Docker Desktop with Kubernetes enabled (or an equivalent local cluster)
