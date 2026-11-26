@@ -1,0 +1,58 @@
+# Profile: microk8s on EC2 (one control node + workers, bootstrapped with the
+# addons dns, ingress, hostpath-storage, helm3). microk8s runs Calico, so the
+# NetworkPolicies are enforced.
+#
+#   microk8s helm3 upgrade --install idar ./helm/idar -n idar --create-namespace \
+#     -f helm/idar/values-microk8s-ec2.yaml \
+#     --set global.panelOrigin=http://<node public IP>
+#
+# Before the install:
+#   - namespace otel-demo exists (agent-core's Role goes there);
+#   - Secret agent-core-secrets holds the LLM key (see values.yaml, agentCore.secret);
+#   - the EC2 security group allows TCP 80 (and 443 with TLS) to the nodes:
+#     the ingress addon listens on the host ports of every node.
+#
+# Images come from Docker Hub (values.yaml). For a private registry such as
+# ECR set global.imageRegistry, the repositories (idar-agent-core, ...) and
+# global.imagePullSecrets; ECR tokens expire after 12 h, so the pull Secret
+# needs refreshing (e.g. a CronJob or the ECR credential helper).
+
+global:
+  # The address the browser uses: a node's public IP (or the DNS name in
+  # ingress.hosts once there is one). Override with --set as above.
+  panelOrigin: http://CHANGE-ME-node-public-ip
+  # hostpath-storage provides the default class (microk8s-hostpath). It keeps
+  # data in a directory on the node that runs the Pod, so a Pod moved to
+  # another node starts with an empty volume; see the nodeSelectors below.
+  storageClass: ""
+
+ingress:
+  enabled: true
+  # IngressClass of the microk8s ingress addon (ingress-nginx).
+  className: public
+  # "" = no host rule: the panel answers on any node IP. Replace with a DNS
+  # name (e.g. <ip>.nip.io) to use TLS.
+  hosts:
+    - ""
+  # With cert-manager (microk8s enable cert-manager) and a DNS name:
+  # annotations:
+  #   cert-manager.io/cluster-issuer: letsencrypt
+  # tls:
+  #   - secretName: idar-tls
+  #     hosts: [idar.example.com]
+
+# The panel is behind the Ingress: two replicas (docs/CLUSTER.md).
+client:
+  replicas: 2
+
+# Pin the workloads with hostpath volumes to one node, so their data does not
+# stay behind when a Pod is rescheduled. Node names: kubectl get nodes.
+# qdrant:
+#   nodeSelector:
+#     kubernetes.io/hostname: CHANGE-ME
+# ollama:
+#   nodeSelector:
+#     kubernetes.io/hostname: CHANGE-ME
+# agentCore:
+#   nodeSelector:
+#     kubernetes.io/hostname: CHANGE-ME

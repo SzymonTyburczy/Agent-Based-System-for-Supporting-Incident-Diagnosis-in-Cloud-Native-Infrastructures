@@ -1,0 +1,66 @@
+# CI only: every optional object turned on, so schema validation covers the
+# templates the default values do not render. Not a deployment profile.
+global:
+  imageRegistry: registry.example.com/idar
+  imageTag: v0.0.0-ci
+  imagePullSecrets:
+    - name: registry-pull
+  storageClass: "-"
+
+namespace:
+  create: true
+
+storageClass:
+  create: true
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - idar.example.com
+    - ""
+  tls:
+    - secretName: idar-tls
+      hosts: [idar.example.com]
+
+ragServer:
+  replicas: 2
+  env:
+    IDAR_EMBEDDING_API_MODEL: text-embedding-3-small
+  secret:
+    create: true
+    data:
+      IDAR_API_TOKEN: ci-token
+
+docConverter:
+  secret:
+    create: true
+    data:
+      API_TOKEN: ci-token
+  nodeSelector:
+    workload: doc-conversion
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: doc-conversion
+      effect: NoSchedule
+
+agentCore:
+  env:
+    LLM_PROVIDER: ollama
+  secret:
+    create: true
+    data:
+      WEBHOOK_SHARED_SECRET: ci-secret
+  environmentProfile:
+    files:
+      environment.md: |
+        Environment: CI.
+      fallback_question.md: |
+        Is anything failing?
+  rbac:
+    namespaces: [otel-demo, ci-extra]
+
+qdrant:
+  persistence:
+    storageClass: fast

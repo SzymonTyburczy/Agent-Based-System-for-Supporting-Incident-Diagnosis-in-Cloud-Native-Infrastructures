@@ -1,0 +1,52 @@
+IDAR {{ .Chart.AppVersion }} — release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Watch the Pods come up (the first deploy takes a few minutes: Ollama pulls
+its models before it is Ready and rag-server waits for it):
+
+  kubectl get pods -n {{ .Release.Namespace }} -w
+{{- if ne .Release.Namespace "idar" }}
+
+WARNING: the panel's Nginx proxies /api/* to <service>.idar.svc.cluster.local
+(client/nginx.conf). In namespace "{{ .Release.Namespace }}" the panel loads but
+its API calls fail. Install into namespace "idar".
+{{- end }}
+{{- if not .Values.namespace.create }}
+{{- $ns := lookup "v1" "Namespace" "" .Release.Namespace }}
+{{- if $ns }}
+{{- if not (index ($ns.metadata.labels | default dict) "pod-security.kubernetes.io/enforce") }}
+
+WARNING: namespace "{{ .Release.Namespace }}" has no Pod Security label. Enforce
+the "restricted" profile the workloads are built for:
+  kubectl label ns {{ .Release.Namespace }} pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if and .Values.agentCore.enabled (not .Values.agentCore.secret.create) (has (.Values.agentCore.env.LLM_PROVIDER | default "") (list "anthropic" "openai")) }}
+{{- $secret := lookup "v1" "Secret" .Release.Namespace .Values.agentCore.secret.name }}
+{{- if not $secret }}
+
+agent-core runs with LLM_PROVIDER={{ .Values.agentCore.env.LLM_PROVIDER }} and needs its API key.
+Secret "{{ .Values.agentCore.secret.name }}" was not found{{ if not (lookup "v1" "Namespace" "" .Release.Namespace) }} (or the cluster was not queried){{ end }}; create it, then restart:
+  kubectl create secret generic {{ .Values.agentCore.secret.name }} -n {{ .Release.Namespace }} \
+    --from-literal={{ ternary "ANTHROPIC_API_KEY" "OPENAI_API_KEY" (eq .Values.agentCore.env.LLM_PROVIDER "anthropic") }}=...
+  kubectl rollout restart deploy/agent-core -n {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- if .Values.client.enabled }}
+{{- if .Values.ingress.enabled }}
+
+Panel:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ . }}/
+{{- end }}
+{{- else }}
+
+Panel (no Ingress) — forward a port and open http://localhost:3000:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/idar-client 3000:8080
+{{- end }}
+{{- end }}
+{{- if .Values.agentCore.enabled }}
+
+Alertmanager webhook for the agent (in-cluster):
+  http://agent-core.{{ .Release.Namespace }}.svc.cluster.local:8080/alerts/webhook
+{{- end }}

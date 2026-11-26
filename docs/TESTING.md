@@ -575,6 +575,21 @@ cd ..
 Two `slow` tests (`uv run python -m pytest -q -m slow`) call the real
 `qwen3-embedding:0.6b` through Ollama and are deselected by default.
 
+The Helm chart is checked without a cluster: lint, and a comparison of its default
+render with the plain manifests in `k8s/`. The `helm-chart` workflow also validates
+the rendered manifests against the Kubernetes schemas. With Helm and Python
+(PyYAML) installed, the same commands work in both shells:
+
+```bash
+helm lint helm/idar --strict
+helm template idar helm/idar -n idar --set namespace.create=true --set storageClass.create=true > rendered.yaml
+python helm/scripts/compare-with-k8s.py rendered.yaml k8s
+```
+
+On a cluster where the chart is installed, `helm test idar -n idar` calls every
+service's health endpoint directly and through the panel's proxy. See
+[helm/idar/README.md](../helm/idar/README.md#checks).
+
 ## Troubleshooting
 
 | Symptom or limitation | Meaning / next check |

@@ -1,0 +1,480 @@
+# Default values for the IDAR chart.
+#
+# The defaults reproduce the plain manifests in k8s/ (docs/CLUSTER.md): the same
+# resource names, ports, probes, security settings and resource budgets. Profiles
+# for specific clusters are next to this file:
+#   values-local.yaml          Docker Desktop / kind with images built locally
+#   values-microk8s-ec2.yaml   microk8s on EC2 with an Ingress and a registry
+#
+# Install into namespace "idar": the panel's Nginx proxies /api/* to
+# <service>.idar.svc.cluster.local (client/nginx.conf), so another namespace
+# leaves the panel without its APIs.
+#
+#   helm upgrade --install idar ./helm/idar -n idar --create-namespace
+#
+# Resource names are fixed (agent-core, rag-server, qdrant, ...) because the
+# services address each other and the panel's Nginx addresses them by those
+# names. Install one release per namespace.
+
+global:
+  # The panel's exact origin as the browser sees it. Goes to all three CORS
+  # settings (agent-core CLIENT_ALLOWED_ORIGINS, doc-converter ALLOWED_ORIGINS,
+  # rag-server IDAR_CORS_ORIGINS). The panel itself calls the APIs through its
+  # own Nginx (same origin); this matters for callers that go to the APIs
+  # directly, e.g. a Vite dev server on a port-forward.
+  panelOrigin: http://localhost:3000
+  # Registry prefix for the four IDAR images (agent-core, rag-server,
+  # doc-converter, client), e.g. 123456789012.dkr.ecr.eu-central-1.amazonaws.com.
+  # Third-party images (Qdrant, Ollama) keep their own registry.
+  imageRegistry: ""
+  # Tag for the four IDAR images; overrides each component's image.tag.
+  imageTag: ""
+  # e.g. [{name: ecr-pull}] — a registry Secret in the release namespace.
+  imagePullSecrets: []
+  # StorageClass for every PVC that does not set its own. "" = the cluster's
+  # default StorageClass; "-" = storageClassName: "" (no dynamic provisioning).
+  storageClass: ""
+
+# The namespace is normally created by `helm ... --create-namespace` and then
+# lacks the Pod Security labels; label it once:
+#   kubectl label ns idar pod-security.kubernetes.io/enforce=restricted \
+#     pod-security.kubernetes.io/enforce-version=latest
+# Or let the chart own the Namespace (then install WITHOUT --create-namespace).
+# The chart keeps it on `helm uninstall` (helm.sh/resource-policy: keep), so
+# the PVCs in it are not deleted with the release.
+namespace:
+  create: false
+  podSecurity:
+    enforce: restricted
+    enforceVersion: latest
+
+# Optional default StorageClass backed by Rancher's local-path provisioner
+# (k8s/01-storage-class.yaml). The provisioner itself must already run in the
+# cluster (k3s ships it); on Docker Desktop and microk8s use their own classes.
+storageClass:
+  create: false
+  name: local-path
+  provisioner: rancher.io/local-path
+  isDefault: true
+  volumeBindingMode: WaitForFirstConsumer
+  reclaimPolicy: Delete
+
+# NetworkPolicies admitting only the clients of Qdrant and Ollama, which have
+# no authentication of their own. Accepted everywhere, enforced only by a
+# network plugin that implements them (Calico, Cilium, AWS VPC CNI with policies
+# enabled; microk8s uses Calico). Docker Desktop does not enforce them.
+networkPolicies:
+  enabled: true
+
+# Ingress in front of the panel. The panel's Nginx proxies /api/agent,
+# /api/converter and /api/rag to the services, so one host is enough and the
+# browser never needs the APIs' own addresses.
+ingress:
+  enabled: false
+  # e.g. "nginx" (ingress-nginx) or "public" (microk8s ingress addon).
+  className: ""
+  # Defaults for ingress-nginx; other controllers ignore them.
+  annotations:
+    # Matches client_max_body_size in client/nginx.conf (PDF uploads).
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    # Embedding a large document on CPU and long conversions; matches the
+    # longest timeout in client/nginx.conf (/api/rag).
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # /api/agent/reports/stream is Server-Sent Events.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  hosts:
+    - idar.example.com
+  # e.g. [{secretName: idar-tls, hosts: [idar.example.com]}]
+  tls: []
+
+# ---------------------------------------------------------------------------
+# qdrant — vector store behind the RAG knowledge base (server/).
+# One replica: collections, the kb_active alias and snapshots live on one
+# ReadWriteOnce volume. Only rag-server talks to it.
+# ---------------------------------------------------------------------------
+qdrant:
+  enabled: true
+  image:
+    registry: ""
+    # Same version as server/docker-compose.yml; -unprivileged runs as UID 1000.
+    repository: qdrant/qdrant
+    tag: v1.19.0-unprivileged
+    pullPolicy: IfNotPresent
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  persistence:
+    # On EC2 the default StorageClass is usually EBS: install the EBS CSI
+    # driver first, otherwise the claim stays Pending. The size of an existing
+    # StatefulSet's claim cannot be changed through the chart.
+    size: 5Gi
+    storageClass: ""
+  # A private knowledge base should not phone home.
+  telemetryDisabled: true
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  probes:
+    # Loading large collections from disk takes a while after a restart.
+    startup:
+      periodSeconds: 5
+      failureThreshold: 60
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 5
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 5
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# ollama — embedding engine for the RAG knowledge base, optionally also the
+# agent's LLM. An init container pulls the models before the server starts, so
+# the Pod is Ready only once rag-server's model is on disk.
+# ---------------------------------------------------------------------------
+ollama:
+  enabled: true
+  image:
+    registry: ""
+    repository: ollama/ollama
+    tag: "0.34.2"
+    pullPolicy: IfNotPresent
+  # Pulled in addition to the models the chart derives itself:
+  # ragServer.embeddingModel, and agentCore.env.OLLAMA_MODEL when
+  # agentCore.env.LLM_PROVIDER is "ollama".
+  extraModels:
+    - llama3.2:3b
+  # Keep models in memory. rag-server's readiness probe runs an embedding on
+  # every check; with Ollama's default 5-minute unload the first probe after an
+  # idle period waits for a reload and can flip rag-server to not-ready.
+  keepAlive: "-1"
+  # The official image runs as root; here it runs as UID 10004 with HOME on an
+  # emptyDir and the models on the volume, so the image stays read-only.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10004
+    runAsGroup: 10004
+    fsGroup: 10004
+    seccompProfile:
+      type: RuntimeDefault
+  persistence:
+    # qwen3-embedding:0.6b is ~0.6 GB, 8b ~5 GB, llama3.2:3b ~2 GB.
+    size: 10Gi
+    storageClass: ""
+    # Keep the claim (and the downloaded models) on `helm uninstall`.
+    keep: true
+  # Sized for qwen3-embedding:0.6b (+ llama3.2:3b). For qwen3-embedding:8b use
+  # 2/4 CPU and 8Gi/12Gi (docs/CLUSTER.md) and prefer a GPU node.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1.5"
+      memory: 4Gi
+  pullModelsResources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  probes:
+    startup:
+      periodSeconds: 5
+      failureThreshold: 24
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 5
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 5
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# rag-server — the RAG knowledge base API (server/): document ingest for the
+# panel, semantic search for the agent. Stateless, can run several replicas.
+# ---------------------------------------------------------------------------
+ragServer:
+  enabled: true
+  replicas: 1
+  image:
+    registry: ""
+    repository: wpawlina2137/idar-rag-server
+    tag: v0.2.0
+    pullPolicy: Always
+  # Ollama embedding model. Pulled by ollama automatically. A different model
+  # gets its own collection, so documents have to be ingested again.
+  embeddingModel: qwen3-embedding:0.6b
+  # On a first deploy Ollama is still pulling the model when rag-server starts.
+  # Uvicorn opens its port only once startup has finished, so the chart sizes
+  # the startupProbe from these two (retries x seconds + one minute).
+  startupRetries: 60
+  startupRetrySeconds: 5
+  # Defaults to the in-chart services; set when Qdrant/Ollama run elsewhere.
+  qdrantUrl: ""
+  ollamaUrl: ""
+  # Extra non-secret settings (IDAR_*), e.g. IDAR_EMBEDDING_API_URL /
+  # IDAR_EMBEDDING_API_MODEL when IDAR_EMBEDDING_API_KEY is in the Secret.
+  # Overrides the settings the chart derives.
+  env: {}
+  # Secret with IDAR_API_TOKEN (bearer token on /api/documents and /api/search)
+  # and/or IDAR_EMBEDDING_API_KEY (embeddings from an OpenAI-compatible API
+  # instead of Ollama; documents must be ingested again). Optional: the Pod
+  # starts without it. With create: true the chart writes `data` into it —
+  # then the values file holds the secrets, so keep it out of git.
+  secret:
+    name: rag-server-secrets
+    create: false
+    data: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10003
+    runAsGroup: 10003
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  probes:
+    # failureThreshold is derived from startupRetries x startupRetrySeconds.
+    startup:
+      periodSeconds: 10
+    # /healthz: the process only.
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 5
+    # /api/health: checks Qdrant and runs a real embedding.
+    readiness:
+      periodSeconds: 20
+      timeoutSeconds: 15
+      failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# doc-converter — PDF to Markdown for the panel's Documentation view (Docling).
+# Models are baked into the image. One Gunicorn worker with one thread, and a
+# conversion can take several GiB, hence one replica and Recreate.
+# ---------------------------------------------------------------------------
+docConverter:
+  enabled: true
+  image:
+    registry: ""
+    repository: wpawlina2137/idar-doc-converter
+    tag: v0.2.0
+    pullPolicy: Always
+  # Gunicorn's own timeout is this + 60 s; the chart keeps the liveness probe's
+  # tolerance above that, so a large PDF does not get the Pod restarted.
+  conversionTimeoutSeconds: 120
+  env: {}
+  # Optional Secret with API_TOKEN: /convert then requires a bearer token.
+  secret:
+    name: doc-converter-secrets
+    create: false
+    data: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10002
+    runAsGroup: 10002
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 6Gi
+  probes:
+    # Loading the layout and table models takes at least three minutes.
+    startup:
+      periodSeconds: 10
+      failureThreshold: 30
+    # failureThreshold is derived from conversionTimeoutSeconds.
+    liveness:
+      periodSeconds: 30
+      timeoutSeconds: 10
+    # Drops the Pod from the Service while a conversion runs.
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 5
+  # docs/CLUSTER.md: a larger, labelled worker, e.g. {workload: doc-conversion}.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# agent-core — the diagnostic agent: Alertmanager webhook, investigation worker
+# and the reports API. One replica, Recreate: the investigation queue and SSE
+# broadcaster are in memory and reports are a local SQLite file.
+#
+# Requires Grafana MCP to accept in-cluster callers (--allowed-hosts must list
+# grafana-mcp.observability.svc.cluster.local:8000,
+# example-infrastructure/values/grafana-mcp-values.yaml).
+# Alertmanager reaches it at
+# http://agent-core.<namespace>.svc.cluster.local:8080/alerts/webhook.
+# ---------------------------------------------------------------------------
+agentCore:
+  enabled: true
+  image:
+    registry: ""
+    repository: wpawlina2137/idar-agent-core
+    tag: v0.2.0
+    pullPolicy: Always
+  # Non-secret settings, as in agent-core/.env.example. The chart adds
+  # OLLAMA_BASE_URL, RAG_API_URL, KUBECTL_ALLOWED_NAMESPACES,
+  # CLIENT_ALLOWED_ORIGINS, WEBHOOK_HOST/PORT and the report paths itself; a
+  # key set here overrides the derived value.
+  env:
+    LLM_PROVIDER: anthropic
+    OPENAI_MODEL: gpt-4.1
+    ANTHROPIC_MODEL: claude-haiku-5-5
+    # With LLM_PROVIDER=ollama the chart also has ollama pull this model.
+    OLLAMA_MODEL: llama3.2:3b
+    MCP_GRAFANA_URL: http://grafana-mcp.observability.svc.cluster.local:8000/sse
+    MCP_GRAFANA_TOOL_PREFIX: grafana_
+    MCP_GRAFANA_TOOL_ALLOWLIST: list_datasources,check_datasources_health,query_prometheus,query_prometheus_histogram,list_prometheus_metric_names,list_prometheus_metric_metadata,list_prometheus_label_names,list_prometheus_label_values,query_loki_logs,query_loki_stats,query_loki_patterns,analyze_loki_labels,list_loki_label_names,list_loki_label_values,search_dashboards,get_dashboard_by_uid,get_dashboard_panel_queries,get_dashboard_summary,alerting_manage_rules
+    AGENT_MAX_ITERATIONS: "12"
+    # Built-in prompt profile (agent_core/environments/). Ignored when
+    # environmentProfile.files is set below.
+    AGENT_ENVIRONMENT: otel-demo
+    RAG_TOP_K: "5"
+    RAG_TIMEOUT_SECONDS: "30"
+  # A custom prompt profile instead of a built-in one: the files are mounted
+  # from a ConfigMap and AGENT_ENVIRONMENT points at them. environment.md is
+  # required, fallback_question.md optional (see agent_core/environments/).
+  environmentProfile:
+    files: {}
+    #  environment.md: |
+    #    Environment: ...
+    #  fallback_question.md: |
+    #    ...
+  # Secret with the keys the configuration needs:
+  #   ANTHROPIC_API_KEY / OPENAI_API_KEY  for LLM_PROVIDER anthropic / openai;
+  #                                       without it the Pod exits at startup
+  #   WEBHOOK_SHARED_SECRET               must match Alertmanager's credentials
+  #   CLIENT_API_TOKEN                    bearer token for /reports*
+  #   RAG_API_TOKEN                       = rag-server's IDAR_API_TOKEN
+  # Create it yourself:
+  #   kubectl create secret generic agent-core-secrets -n idar \
+  #     --from-literal=ANTHROPIC_API_KEY=...
+  # or set create: true and pass data with --set / a values file kept out of git.
+  secret:
+    name: agent-core-secrets
+    create: false
+    data: {}
+  # kubectl inside the Pod: read-only access in these namespaces. The same list
+  # becomes KUBECTL_ALLOWED_NAMESPACES, so the allowlist and RBAC cannot drift.
+  # The namespaces must exist before the install.
+  rbac:
+    create: true
+    namespaces:
+      - otel-demo
+    rules:
+      # kubectl_get_pods and kubectl_pod_diagnostics (agent_core/tools/cli_tools.py).
+      - apiGroups: [""]
+        resources: ["pods", "events"]
+        verbs: ["get", "list", "watch"]
+  persistence:
+    # JSON reports and the SQLite database.
+    size: 1Gi
+    storageClass: ""
+    # Keep the claim (and the reports) on `helm uninstall`.
+    keep: true
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  probes:
+    # The agent connects to MCP and discovers its tools before it opens the port.
+    startup:
+      periodSeconds: 5
+      failureThreshold: 24
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 5
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 5
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# client — the web panel: React build on unprivileged Nginx, which also
+# proxies /api/agent, /api/converter and /api/rag to the services.
+# ---------------------------------------------------------------------------
+client:
+  enabled: true
+  replicas: 2
+  image:
+    registry: ""
+    repository: wpawlina2137/idar-client
+    tag: v0.2.0
+    pullPolicy: Always
+  podSecurityContext:
+    runAsNonRoot: true
+    # The nginx user of nginxinc/nginx-unprivileged.
+    runAsUser: 101
+    runAsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  probes:
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 3
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# `helm test <release> -n idar`: health checks of every enabled service, directly
+# and through the panel's proxy (templates/tests/test-health.yaml).
+tests:
+  enabled: true
+  image:
+    registry: ""
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  # Per request. rag-server's /api/health runs an embedding (its own readiness
+  # probe allows 15 s).
+  timeoutSeconds: 20

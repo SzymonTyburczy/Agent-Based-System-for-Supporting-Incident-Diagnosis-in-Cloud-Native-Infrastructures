@@ -1,5 +1,11 @@
 # Kubernetes manifests for IDAR
 
+> **Prefer the Helm chart in [`helm/idar/`](../helm/idar/README.md).** It deploys the
+> same objects, with one place for shared settings, an optional Ingress and profiles
+> for Docker Desktop and EC2. These manifests stay until the chart has been verified
+> on a live cluster. Until then, make every change in both places: the `helm-chart`
+> CI workflow fails when the chart's default render and these files differ.
+
 Plain manifests for the IDAR workloads in namespace `idar`, following the layout
 proposed in [docs/CLUSTER.md](../docs/CLUSTER.md). One file per workload; each file
 starts with a header describing what it needs and why it is shaped the way it is.

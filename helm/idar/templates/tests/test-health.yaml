@@ -1,0 +1,79 @@
+{{- /*
+`helm test idar -n idar`: one Pod that calls each enabled service's health
+endpoint, then the same services through the panel's Nginx proxy.
+
+- rag-server /api/health also checks Qdrant and runs an embedding, so it covers
+  Qdrant and Ollama, which their NetworkPolicies close to this Pod.
+- /api/<service>/healthz through idar-client proves the panel's proxy reaches
+  the services (it fails when the release is not in namespace "idar").
+None of these endpoints needs a token.
+*/ -}}
+{{- if .Values.tests.enabled }}
+{{- $checks := list }}
+{{- if .Values.agentCore.enabled }}
+{{- $checks = append $checks "http://agent-core:8080/healthz" }}
+{{- end }}
+{{- if .Values.ragServer.enabled }}
+{{- $checks = append $checks "http://rag-server:8080/api/health" }}
+{{- end }}
+{{- if .Values.docConverter.enabled }}
+{{- $checks = append $checks "http://doc-converter:5001/healthz" }}
+{{- end }}
+{{- if .Values.client.enabled }}
+{{- $checks = append $checks "http://idar-client:8080/healthz" }}
+{{- if .Values.agentCore.enabled }}
+{{- $checks = append $checks "http://idar-client:8080/api/agent/healthz" }}
+{{- end }}
+{{- if .Values.ragServer.enabled }}
+{{- $checks = append $checks "http://idar-client:8080/api/rag/healthz" }}
+{{- end }}
+{{- if .Values.docConverter.enabled }}
+{{- $checks = append $checks "http://idar-client:8080/api/converter/healthz" }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: idar-test-health
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "idar.labels" (dict "ctx" $ "name" "idar-test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  {{- include "idar.imagePullSecrets" . | nindent 2 }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: health
+      image: {{ include "idar.image" (dict "ctx" $ "image" .Values.tests.image) }}
+      imagePullPolicy: {{ .Values.tests.image.pullPolicy }}
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          failed=0
+          for url in {{ join " " $checks }}; do
+            if wget -q -T {{ .Values.tests.timeoutSeconds }} -O /dev/null "$url"; then
+              echo "ok   $url"
+            else
+              echo "FAIL $url"
+              failed=1
+            fi
+          done
+          exit $failed
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 100m
+          memory: 32Mi
+      securityContext:
+        {{- include "idar.containerSecurityContext" . | nindent 8 }}
+{{- end }}
